@@ -7,10 +7,37 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 )
 
 func ExecCommand(workingDirectory string, app []string) (string, error) {
+	x := app[0]
+	_, app = app[0], app[1:]
+	cmd := exec.Command(x, app...)
+	cmd.Dir = workingDirectory
+	stdout, err := cmd.StdoutPipe()
+	cmd.Stderr = cmd.Stdout
+	if err != nil {
+		return "", err
+	}
+	if err = cmd.Start(); err != nil {
+		return "", err
+	}
+	var strs = []string{}
+	for {
+		tmp := make([]byte, 1024)
+		_, err := stdout.Read(tmp)
+		strs = append(strs, string(tmp))
+		if err != nil {
+			break
+		}
+	}
+
+	return strings.Join(strs, "###"), nil
+}
+
+func ExecCommandOld(workingDirectory string, app []string) (string, error) {
 	x := app[0]
 	_, app = app[0], app[1:]
 	cmd := exec.Command(x, app...)
