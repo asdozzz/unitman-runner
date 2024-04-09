@@ -83,15 +83,16 @@ func InitProjectActivity(ctx context.Context, command InitProjectCommand) (*Init
 
 	filepath = currentPath + "/" + filepath
 	args := []string{"git", "clone", "--progress", command.StorageUrl, "."}
+	argsForResponse := []string{"git", "clone", "--progress", "."}
 	msg, err := utils.ExecCommand(filepath, args)
 
 	if err != nil {
 		result.Success = false
-		result.Steps = append(result.Steps, model.Step{Command: strings.Join(args, " "), Response: err.Error(), Success: false, Unixtime: time.Now().Unix()})
+		result.Steps = append(result.Steps, model.Step{Command: strings.Join(argsForResponse, " "), Response: err.Error(), Success: false, Unixtime: time.Now().Unix()})
 		return result, nil
 	} else {
 		result.Success = true
-		result.Steps = append(result.Steps, model.Step{Command: strings.Join(args, " "), Response: msg, Success: true, Unixtime: time.Now().Unix()})
+		result.Steps = append(result.Steps, model.Step{Command: strings.Join(argsForResponse, " "), Response: msg, Success: true, Unixtime: time.Now().Unix()})
 	}
 
 	return result, nil

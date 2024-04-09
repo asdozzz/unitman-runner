@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-func ExecCommand(workingDirectory string, app []string) (string, error) {
+func ExecCommandNew(workingDirectory string, app []string) (string, error) {
 	x := app[0]
 	_, app = app[0], app[1:]
 	cmd := exec.Command(x, app...)
@@ -37,7 +37,7 @@ func ExecCommand(workingDirectory string, app []string) (string, error) {
 	return strings.Join(strs, "###"), nil
 }
 
-func ExecCommandOld(workingDirectory string, app []string) (string, error) {
+func ExecCommand(workingDirectory string, app []string) (string, error) {
 	x := app[0]
 	_, app = app[0], app[1:]
 	cmd := exec.Command(x, app...)
@@ -69,8 +69,8 @@ func ExecCommandOld(workingDirectory string, app []string) (string, error) {
 
 	err = cmd.Wait()
 	if err != nil {
-		log.Printf("cmd.Run() failed with %s\n", err)
-		return "", err
+		log.Printf("cmd.Run() failed with %s\n - out: %s, err: %s", err, string(stdout), string(stderr))
+		return "", errors.New(fmt.Sprintf("%s\n%s", string(stdout), string(stderr)))
 	}
 	if errStdout != nil || errStderr != nil {
 		return "", errors.New("failed to capture stdout or stderr\n")

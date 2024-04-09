@@ -4,15 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
-	"path"
 	"runner/temporal/activity/unit/model"
 )
 
 type NachatUdalenieUnita struct {
-	ProjectId string
-	Name      string
+	ProjectId  string
+	Id         string
+	Name       string
+	StorageUrl string
 }
 
 type ResultatUdaleniyaUnita struct {
@@ -35,21 +35,13 @@ func NachatUdalenieUnitaActivity(ctx context.Context, command NachatUdalenieUnit
 
 	fmt.Println("NachatUdalenieUnita:" + string(out))
 
-	filepath := "./projects/" + command.ProjectId + "/units/" + command.Name
-	dir, err := ioutil.ReadDir(filepath)
-	result.Steps = model.AddStepToSteps(result.Steps, "ReadDir", "success", err)
+	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
+
+	err = os.RemoveAll(filepath)
+	result.Steps = model.AddStepToSteps(result.Steps, "remove unit directory", "success", err)
 	if err != nil {
 		result.Success = 0
 		return result, nil
-	}
-	for _, d := range dir {
-		item := path.Join([]string{filepath, d.Name()}...)
-		err = os.RemoveAll(item)
-		result.Steps = model.AddStepToSteps(result.Steps, "remove "+item, "success", err)
-		if err != nil {
-			result.Success = 0
-			return result, nil
-		}
 	}
 
 	result.Success = 1

@@ -13,7 +13,9 @@ import (
 type NachatZapuskUnita struct {
 	ProjectId   string
 	ProjectName string
+	Id          string
 	Name        string
+	StorageUrl  string
 	Commands    []string
 	Variables   []model.UnitConfigVariable
 }
@@ -38,7 +40,7 @@ func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (
 
 	fmt.Println("ResultatZapuskaUnita:" + string(out))
 
-	filepath := "./projects/" + command.ProjectId + "/units/" + command.Name
+	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
 
 	currentPath, err := os.Getwd()
 	result.Steps = model.AddStepToSteps(result.Steps, "Getwd", "success", err)

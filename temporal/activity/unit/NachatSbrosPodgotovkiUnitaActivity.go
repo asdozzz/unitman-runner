@@ -11,11 +11,12 @@ import (
 )
 
 type NachatSbrosPodgotovkiUnita struct {
-	UnitId    string
-	ProjectId string
-	Name      string
-	Commands  []string
-	Variables []model.UnitConfigVariable
+	UnitId     string
+	ProjectId  string
+	Name       string
+	StorageUrl string
+	Commands   []string
+	Variables  []model.UnitConfigVariable
 }
 
 type ResultatSbrosaPodgotovkiUnita struct {
@@ -44,7 +45,7 @@ func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbros
 
 	fmt.Println("NachatSbrosPodgotovkiUnita:" + string(out))
 
-	filepath := "./projects/" + command.ProjectId + "/units/" + command.Name
+	filepath := "./projects/" + command.ProjectId + "/units/" + command.UnitId
 
 	currentPath, err := os.Getwd()
 	result.Steps = model.AddStepToSteps(result.Steps, "Getwd", "success", err)

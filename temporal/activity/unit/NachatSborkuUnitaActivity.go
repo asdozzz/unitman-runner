@@ -13,9 +13,11 @@ import (
 )
 
 type NachatSborkuUnita struct {
-	ProjectId string
-	Name      string
-	Branch    string
+	ProjectId  string
+	Id         string
+	Name       string
+	Branch     string
+	StorageUrl string
 }
 
 type ResultatSbrokiUnita struct {
@@ -40,7 +42,7 @@ func NachatSborkuUnitaActivity(ctx context.Context, command NachatSborkuUnita) (
 
 	fmt.Println("NachatSborkuUnita:" + string(out))
 
-	filepath := "./projects/" + command.ProjectId + "/units/" + command.Name
+	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
 	err = os.MkdirAll(filepath, os.ModePerm)
 	result.Steps = model.AddStepToSteps(result.Steps, "MkdirAll", "success", err)
 	if err != nil {
@@ -91,7 +93,7 @@ func NachatSborkuUnitaActivity(ctx context.Context, command NachatSborkuUnita) (
 		return result, nil
 	}
 
-	args = []string{"git", "checkout", "-b", "unit/" + command.Name, "origin/" + command.Branch}
+	args = []string{"git", "checkout", "-b", "unit/" + command.Id, "origin/" + command.Branch}
 	msg, err = utils.ExecCommand(filepath, args)
 	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
 	if err != nil {

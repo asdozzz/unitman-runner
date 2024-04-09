@@ -12,6 +12,7 @@ import (
 
 type NachatObnovlenieUnita struct {
 	ProjectId string
+	Id        string
 	Name      string
 }
 
@@ -36,7 +37,7 @@ func NachatObnovlenieUnitaActivity(ctx context.Context, command NachatObnovlenie
 
 	fmt.Println("NachatObnovlenieUnita:" + string(out))
 
-	filepath := "./projects/" + command.ProjectId + "/units/" + command.Name
+	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
 
 	currentPath, err := os.Getwd()
 	result.Steps = model.AddStepToSteps(result.Steps, "Getwd", "success", err)
