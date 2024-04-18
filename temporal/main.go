@@ -4,6 +4,7 @@ import (
 	"go.temporal.io/sdk/worker"
 	"log"
 	projectActivity "runner/temporal/activity/project"
+	"runner/temporal/activity/runner"
 	unitActivity "runner/temporal/activity/unit"
 	"runner/temporal/utils"
 )
@@ -30,6 +31,7 @@ func Init() {
 	w.RegisterActivity(unitActivity.NachatSbrosPodgotovkiUnitaActivity)
 	w.RegisterActivity(unitActivity.NachatZapuskUnitaActivity)
 	w.RegisterActivity(unitActivity.NachatOstanokuUnitaActivity)
+	w.RegisterActivity(runner.RunnerHealthCheckActivity)
 
 	// Start listening to the Task Queue
 	err = w.Run(worker.InterruptCh())

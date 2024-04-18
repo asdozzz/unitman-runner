@@ -61,8 +61,8 @@ func NachatSborkuUnitaActivity(ctx context.Context, command NachatSborkuUnita) (
 		item := path.Join([]string{filepath, d.Name()}...)
 		fmt.Println("item:" + item)
 		err = os.RemoveAll(item)
-		result.Steps = model.AddStepToSteps(result.Steps, "remove child item "+item, "success", err)
 		if err != nil {
+			result.Steps = model.AddStepToSteps(result.Steps, "remove child item "+item, "success", err)
 			result.Success = 0
 			return result, nil
 		}

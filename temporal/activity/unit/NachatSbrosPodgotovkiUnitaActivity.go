@@ -57,8 +57,8 @@ func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbros
 	filepath = currentPath + "/" + filepath
 
 	for _, variableItem := range command.Variables {
-		err = os.Setenv(variableItem.Id, variableItem.Value)
-		result.Steps = model.AddStepToSteps(result.Steps, "Setenv "+variableItem.Id, "success", err)
+		err = os.Setenv("UNITMAN_"+variableItem.Id, variableItem.Value)
+		result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_"+variableItem.Id, "success", err)
 		if err != nil {
 			return sendErrorResponse(result, err)
 		}

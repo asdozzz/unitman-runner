@@ -1,27 +1,98 @@
 package main
 
 import (
-	"context"
-	"go.temporal.io/sdk/client"
+	"flag"
+	"github.com/sevlyar/go-daemon"
 	"log"
-	"runner/activity/unit"
+	"os"
+	"syscall"
+	"time"
+)
+
+var (
+	signal = flag.String("s", "", `Send signal to the daemon:
+  quit — graceful shutdown
+  stop — fast shutdown
+  reload — reloading the configuration file`)
 )
 
 func main() {
-	c, err := client.Dial(client.Options{})
+	flag.Parse()
+	daemon.AddCommand(daemon.StringFlag(signal, "quit"), syscall.SIGQUIT, termHandler)
+	daemon.AddCommand(daemon.StringFlag(signal, "stop"), syscall.SIGTERM, termHandler)
+	daemon.AddCommand(daemon.StringFlag(signal, "reload"), syscall.SIGHUP, reloadHandler)
+
+	cntxt := &daemon.Context{
+		PidFileName: "sample.pid",
+		PidFilePerm: 0644,
+		LogFileName: "sample.log",
+		LogFilePerm: 0640,
+		WorkDir:     "./",
+		Umask:       027,
+		Args:        []string{"[go-daemon sample]"},
+	}
+
+	if len(daemon.ActiveFlags()) > 0 {
+		d, err := cntxt.Search()
+		if err != nil {
+			log.Fatalf("Unable send signal to the daemon: %s", err.Error())
+		}
+		daemon.SendCommands(d)
+		return
+	}
+
+	d, err := cntxt.Reborn()
 	if err != nil {
-		log.Fatalln("Unable to create client", err)
+		log.Fatalln(err)
 	}
-	defer c.Close()
-
-	workflowOptions := client.StartWorkflowOptions{
-		TaskQueue: "unitman-runner-queue",
+	if d != nil {
+		return
 	}
+	defer cntxt.Release()
 
-	we, err := c.ExecuteWorkflow(context.Background(), workflowOptions, unit.UstanovitResultatSbrosaPodgotovkiUnitaWorkflow)
+	log.Println("- - - - - - - - - - - - - - -")
+	log.Println("daemon started")
+
+	go worker()
+
+	err = daemon.ServeSignals()
 	if err != nil {
-		log.Fatalln("Unable to execute workflow", err)
+		log.Printf("Error: %s", err.Error())
 	}
 
-	log.Println("Started workflow", "WorkflowID", we.GetID(), "RunID", we.GetRunID())
+	log.Println("daemon terminated")
+}
+
+var (
+	stop = make(chan struct{})
+	done = make(chan struct{})
+)
+
+func worker() {
+LOOP:
+	for {
+		time.Sleep(time.Second) // this is work to be done by worker.
+		select {
+		case <-stop:
+			break LOOP
+		default:
+		}
+	}
+	done <- struct{}{}
+
+}
+
+func termHandler(sig os.Signal) error {
+	log.Println("terminating...")
+	stop <- struct{}{}
+	if sig == syscall.SIGQUIT {
+		<-done
+	}
+	return daemon.ErrStop
+
+}
+
+func reloadHandler(sig os.Signal) error {
+	log.Println("configuration reloaded")
+	return nil
 }

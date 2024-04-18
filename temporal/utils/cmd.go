@@ -53,9 +53,6 @@ func ExecCommand(workingDirectory string, app []string) (string, error) {
 		return "", err
 	}
 
-	// cmd.Wait() should be called only after we finish reading
-	// from stdoutIn and stderrIn.
-	// wg ensures that we finish
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {

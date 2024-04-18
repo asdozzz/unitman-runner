@@ -5,7 +5,9 @@ import (
 )
 
 func MakeTemporalClient() (client.Client, error) {
-	c, err := client.Dial(client.Options{})
+	c, err := client.Dial(client.Options{
+		HostPort: "localhost:7233",
+	})
 	if err != nil {
 		return nil, err
 	}

@@ -51,23 +51,23 @@ func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (
 
 	filepath = currentPath + "/" + filepath
 
-	err = os.Setenv("PROJECT_NAME", command.ProjectName)
-	result.Steps = model.AddStepToSteps(result.Steps, "Setenv PROJECT_NAME", "success", err)
+	err = os.Setenv("UNITMAN_PROJECT_NAME", command.ProjectName)
+	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_PROJECT_NAME", "success", err)
 	if err != nil {
 		result.Success = 0
 		return result, nil
 	}
 
-	err = os.Setenv("UNITNAME", command.Name)
-	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITNAME", "success", err)
+	err = os.Setenv("UNITMAN_UNIT_NAME", command.Name)
+	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_UNIT_NAME", "success", err)
 	if err != nil {
 		result.Success = 0
 		return result, nil
 	}
 
 	for _, variableItem := range command.Variables {
-		err = os.Setenv(variableItem.Id, variableItem.Value)
-		result.Steps = model.AddStepToSteps(result.Steps, "Setenv "+variableItem.Id, "success", err)
+		err = os.Setenv("UNITMAN_"+variableItem.Id, variableItem.Value)
+		result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_"+variableItem.Id, "success", err)
 		if err != nil {
 			result.Success = 0
 			return result, nil
