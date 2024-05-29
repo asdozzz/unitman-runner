@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
@@ -51,8 +52,50 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 
 	filepath = currentPath + "/" + filepath
 
+	/*err = os.Setenv("UNITMAN_PROJECT_NAME", command.ProjectName)
+	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_PROJECT_NAME", "success", err)
+	if err != nil {
+		result.Success = 0
+		return result, nil
+	}*/
+	err = os.Setenv("UNITMAN_UNIT_NAME", command.Name)
+	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_UNIT_NAME", "success", err)
+	if err != nil {
+		result.Success = 0
+		return result, nil
+	}
+
+	envFilePath := filepath + "/.env.unit"
+
+	err = os.Truncate(envFilePath, 0)
+	result.Steps = model.AddStepToSteps(result.Steps, "clear env file", "success", err)
+	if err != nil {
+		result.Success = 0
+		return result, nil
+	}
+
+	f, err := os.OpenFile(envFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	result.Steps = model.AddStepToSteps(result.Steps, "open env file", "success", err)
+	if err != nil {
+		result.Success = 0
+		return result, nil
+	}
+	defer func(f *os.File) {
+		err := f.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}(f)
+
+	_, err = f.Write([]byte("UNITMAN_UNIT_NAME=" + command.Name + "\n"))
+	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_UNIT_NAME", "success", err)
+	if err != nil {
+		result.Success = 0
+		return result, nil
+	}
+
 	for _, variableItem := range command.Variables {
-		err = os.Setenv("UNITMAN_"+variableItem.Id, variableItem.Value)
+		_, err = f.Write([]byte("UNITMAN_" + variableItem.Id + "=" + variableItem.Value + "\n"))
 		result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_"+variableItem.Id, "success", err)
 		if err != nil {
 			result.Success = 0
@@ -60,10 +103,21 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		}
 	}
 
+	args := []string{"docker-compose", "up", "-d", "--build"}
+	msg, err := utils.ExecCommand(filepath, args)
+	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
+	if err != nil {
+		result.Success = 0
+		return result, nil
+	}
+
+	execDockerCommand := []string{"docker-compose", "exec", "unit"}
+
 	for _, commandString := range command.Commands {
-		args := strings.Split(commandString, " ")
+		commandArgs := strings.Split(commandString, " ")
+		args := append(execDockerCommand, commandArgs...)
 		msg, errCommand := utils.ExecCommand(filepath, args)
-		result.Steps = model.AddStepToSteps(result.Steps, commandString, msg, err)
+		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
 		if errCommand != nil {
 			result.Success = 0
 			return result, nil

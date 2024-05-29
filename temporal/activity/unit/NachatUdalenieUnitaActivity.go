@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"runner/temporal/activity/unit/model"
+	"runner/temporal/utils"
+	"strings"
 )
 
 type NachatUdalenieUnita struct {
@@ -36,6 +38,14 @@ func NachatUdalenieUnitaActivity(ctx context.Context, command NachatUdalenieUnit
 	fmt.Println("NachatUdalenieUnita:" + string(out))
 
 	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
+
+	args := []string{"docker-compose", "down"}
+	msg, err := utils.ExecCommand(filepath, args)
+	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
+	if err != nil {
+		result.Success = 0
+		return result, nil
+	}
 
 	err = os.RemoveAll(filepath)
 	result.Steps = model.AddStepToSteps(result.Steps, "remove unit directory", "success", err)

@@ -56,21 +56,25 @@ func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbros
 
 	filepath = currentPath + "/" + filepath
 
-	for _, variableItem := range command.Variables {
-		err = os.Setenv("UNITMAN_"+variableItem.Id, variableItem.Value)
-		result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_"+variableItem.Id, "success", err)
-		if err != nil {
-			return sendErrorResponse(result, err)
+	execDockerCommand := []string{"docker-compose", "exec", "unit"}
+
+	for _, commandString := range command.Commands {
+		commandArgs := strings.Split(commandString, " ")
+		args := append(execDockerCommand, commandArgs...)
+		msg, errCommand := utils.ExecCommand(filepath, args)
+		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
+		if errCommand != nil {
+			result.Success = 0
+			return result, nil
 		}
 	}
 
-	for _, commandString := range command.Commands {
-		args := strings.Split(commandString, " ")
-		msg, errCommand := utils.ExecCommand(filepath, args)
-		result.Steps = model.AddStepToSteps(result.Steps, commandString, msg, errCommand)
-		if errCommand != nil {
-			return sendErrorResponse(result, errCommand)
-		}
+	args := []string{"docker-compose", "down"}
+	msg, err := utils.ExecCommand(filepath, args)
+	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
+	if err != nil {
+		result.Success = 0
+		return result, nil
 	}
 
 	return result, nil

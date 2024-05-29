@@ -75,9 +75,9 @@ func NachatSborkuUnitaActivity(ctx context.Context, command NachatSborkuUnita) (
 		return result, nil
 	}
 
-	filepath = currentPath + "/" + filepath
-	mainBranchPath := currentPath + "/projects/" + command.ProjectId + "/mainBranch/."
-	args := []string{"cp", "-R", mainBranchPath, filepath}
+	unitPath := currentPath + "/" + filepath
+	dockerFilesPath := currentPath + "/temporal/activity/unit/docker/."
+	args := []string{"cp", "-R", dockerFilesPath, unitPath}
 	msg, err := utils.ExecCommand(filepath, args)
 	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
 	if err != nil {
@@ -85,8 +85,18 @@ func NachatSborkuUnitaActivity(ctx context.Context, command NachatSborkuUnita) (
 		return result, nil
 	}
 
-	args = []string{"git", "fetch", "--all"}
+	appPath := currentPath + "/" + filepath + "/app"
+	mainBranchPath := currentPath + "/projects/" + command.ProjectId + "/mainBranch/."
+	args = []string{"cp", "-R", mainBranchPath, appPath}
 	msg, err = utils.ExecCommand(filepath, args)
+	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
+	if err != nil {
+		result.Success = 0
+		return result, nil
+	}
+
+	args = []string{"git", "fetch", "--all"}
+	msg, err = utils.ExecCommand(appPath, args)
 	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
 	if err != nil {
 		result.Success = 0
@@ -94,14 +104,14 @@ func NachatSborkuUnitaActivity(ctx context.Context, command NachatSborkuUnita) (
 	}
 
 	args = []string{"git", "checkout", "-b", "unit/" + command.Id, "origin/" + command.Branch}
-	msg, err = utils.ExecCommand(filepath, args)
+	msg, err = utils.ExecCommand(appPath, args)
 	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
 	if err != nil {
 		result.Success = 0
 		return result, nil
 	}
 
-	b, _ := os.ReadFile(filepath + "/unitman.yaml") // just pass the file name
+	b, _ := os.ReadFile(appPath + "/unitman.yaml") // just pass the file name
 	if b != nil {
 		result.Config = string(b)
 	}

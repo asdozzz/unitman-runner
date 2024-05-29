@@ -46,7 +46,7 @@ func NachatObnovlenieUnitaActivity(ctx context.Context, command NachatObnovlenie
 		return result, nil
 	}
 
-	filepath = currentPath + "/" + filepath
+	filepath = currentPath + "/" + filepath + "/app"
 
 	args := []string{"git", "pull"}
 	msg, err := utils.ExecCommand(filepath, args)
