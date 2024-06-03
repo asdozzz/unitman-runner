@@ -12,12 +12,13 @@ import (
 )
 
 type NachatPodgotovkuUnita struct {
-	ProjectId  string
-	Id         string
-	Name       string
-	StorageUrl string
-	Commands   []string
-	Variables  []model.UnitConfigVariable
+	ProjectId   string
+	ProjectName string
+	Id          string
+	Name        string
+	StorageUrl  string
+	Commands    []string
+	Variables   []model.UnitConfigVariable
 }
 
 type ResultatPodgotovkiUnita struct {
@@ -52,12 +53,13 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 
 	filepath = currentPath + "/" + filepath
 
-	/*err = os.Setenv("UNITMAN_PROJECT_NAME", command.ProjectName)
+	err = os.Setenv("UNITMAN_PROJECT_NAME", command.ProjectName)
 	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_PROJECT_NAME", "success", err)
 	if err != nil {
 		result.Success = 0
 		return result, nil
-	}*/
+	}
+
 	err = os.Setenv("UNITMAN_UNIT_NAME", command.Name)
 	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_UNIT_NAME", "success", err)
 	if err != nil {

@@ -35,6 +35,13 @@ func NachatUdalenieUnitaActivity(ctx context.Context, command NachatUdalenieUnit
 		return result, nil
 	}
 
+	err = os.Setenv("UNITMAN_UNIT_NAME", command.Name)
+	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_UNIT_NAME", "success", err)
+	if err != nil {
+		result.Success = 0
+		return result, nil
+	}
+
 	fmt.Println("NachatUdalenieUnita:" + string(out))
 
 	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id

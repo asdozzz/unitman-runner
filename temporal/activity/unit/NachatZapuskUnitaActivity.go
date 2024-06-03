@@ -51,32 +51,6 @@ func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (
 
 	filepath = currentPath + "/" + filepath
 
-	args := []string{"echo", "\"UNITMAN_UNIT_NAME=" + command.Name + "\"", ">", ".env.unit"}
-	msg, errCommand := utils.ExecCommand(filepath, args)
-	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
-	if errCommand != nil {
-		result.Success = 0
-		return result, nil
-	}
-
-	args = []string{"echo", "\"UNITMAN_PROJECT_NAME=" + command.ProjectName + "\"", ">>", ".env.unit"}
-	msg, errCommand = utils.ExecCommand(filepath, args)
-	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
-	if errCommand != nil {
-		result.Success = 0
-		return result, nil
-	}
-
-	for _, variableItem := range command.Variables {
-		args := []string{"echo", "\"UNITMAN_" + variableItem.Id + "=" + variableItem.Value + "\"", ">>", ".env.unit"}
-		msg, errCommand := utils.ExecCommand(filepath, args)
-		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
-		if errCommand != nil {
-			result.Success = 0
-			return result, nil
-		}
-	}
-
 	execDockerCommand := []string{"docker-compose", "exec", "unit"}
 
 	for _, commandString := range command.Commands {
