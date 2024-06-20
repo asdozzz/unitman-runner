@@ -95,6 +95,22 @@ func NachatSborkuUnitaActivity(ctx context.Context, command NachatSborkuUnita) (
 		return result, nil
 	}
 
+	args = []string{"git", "reset", "--hard"}
+	msg, err = utils.ExecCommand(appPath, args)
+	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
+	if err != nil {
+		result.Success = 0
+		return result, nil
+	}
+
+	args = []string{"git", "remote", "set-url", "origin", command.StorageUrl}
+	msg, err = utils.ExecCommand(appPath, args)
+	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
+	if err != nil {
+		result.Success = 0
+		return result, nil
+	}
+
 	args = []string{"git", "fetch", "--all"}
 	msg, err = utils.ExecCommand(appPath, args)
 	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
