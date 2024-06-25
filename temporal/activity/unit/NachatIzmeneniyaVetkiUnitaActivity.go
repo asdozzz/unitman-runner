@@ -24,7 +24,7 @@ type ResultatIzmeneniyaVetkiUnita struct {
 	Config  string
 }
 
-func NachatIzmenenieVetkiUnitaActivity(ctx context.Context, command NachatIzmenenieVetkiUnita) (*ResultatIzmeneniyaVetkiUnita, error) {
+func NachatIzmeneniyaVetkiUnitaActivity(ctx context.Context, command NachatIzmenenieVetkiUnita) (*ResultatIzmeneniyaVetkiUnita, error) {
 	result := &ResultatIzmeneniyaVetkiUnita{
 		Success: 1,
 		Steps:   []model.Step{},
@@ -73,7 +73,7 @@ func NachatIzmenenieVetkiUnitaActivity(ctx context.Context, command NachatIzmene
 		return result, nil
 	}
 
-	args = []string{"git", "checkout", "-b", command.NewBranch, "origin/" + command.NewBranch}
+	args = []string{"git", "checkout", "-B", command.NewBranch, "origin/" + command.NewBranch}
 	msg, err = utils.ExecCommand(appPath, args)
 	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
 	if err != nil {

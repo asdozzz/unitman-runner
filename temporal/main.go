@@ -32,7 +32,7 @@ func Init() {
 	w.RegisterActivity(unitActivity.NachatZapuskUnitaActivity)
 	w.RegisterActivity(unitActivity.NachatOstanokuUnitaActivity)
 	w.RegisterActivity(runner.RunnerHealthCheckActivity)
-	w.RegisterActivity(unitActivity.NachatIzmenenieVetkiUnitaActivity)
+	w.RegisterActivity(unitActivity.NachatIzmeneniyaVetkiUnitaActivity)
 
 	// Start listening to the Task Queue
 	err = w.Run(worker.InterruptCh())
