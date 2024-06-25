@@ -119,7 +119,7 @@ func NachatSborkuUnitaActivity(ctx context.Context, command NachatSborkuUnita) (
 		return result, nil
 	}
 
-	args = []string{"git", "checkout", "-b", "unit/" + command.Id, "origin/" + command.Branch}
+	args = []string{"git", "checkout", "-b", command.Branch, "origin/" + command.Branch}
 	msg, err = utils.ExecCommand(appPath, args)
 	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
 	if err != nil {
