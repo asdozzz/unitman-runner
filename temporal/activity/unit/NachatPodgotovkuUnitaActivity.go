@@ -89,6 +89,13 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		}
 	}(f)
 
+	_, err = f.Write([]byte("DOCKER_HOST=unix:////var/run/user/1000/docker.sock\n"))
+	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_UNIT_NAME", "success", err)
+	if err != nil {
+		result.Success = 0
+		return result, nil
+	}
+
 	_, err = f.Write([]byte("UNITMAN_UNIT_NAME=" + command.Name + "\n"))
 	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_UNIT_NAME", "success", err)
 	if err != nil {
