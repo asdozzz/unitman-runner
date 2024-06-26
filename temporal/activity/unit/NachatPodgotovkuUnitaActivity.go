@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/user"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
 	"strings"
@@ -89,7 +90,17 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		}
 	}(f)
 
-	_, err = f.Write([]byte("DOCKER_HOST=unix:////var/run/user/1000/docker.sock\n"))
+	currentUser, err := user.Current()
+	if err != nil {
+		log.Fatalf(err.Error())
+	}
+
+	name := currentUser.Name
+	userId := currentUser.Uid
+
+	fmt.Printf("name is: %s and id is: %s\n", name, userId)
+
+	_, err = f.Write([]byte("DOCKER_HOST=unix:////var/run/user/" + userId + "/docker.sock\n"))
 	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_UNIT_NAME", "success", err)
 	if err != nil {
 		result.Success = 0
