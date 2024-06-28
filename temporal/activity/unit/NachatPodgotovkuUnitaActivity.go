@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/user"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
 	"strings"
@@ -90,23 +89,6 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		}
 	}(f)
 
-	currentUser, err := user.Current()
-	if err != nil {
-		log.Fatalf(err.Error())
-	}
-
-	name := currentUser.Name
-	userId := currentUser.Uid
-
-	fmt.Printf("name is: %s and id is: %s\n", name, userId)
-
-	_, err = f.Write([]byte("DOCKER_HOST=unix:////var/run/user/" + userId + "/docker.sock\n"))
-	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_UNIT_NAME", "success", err)
-	if err != nil {
-		result.Success = 0
-		return result, nil
-	}
-
 	_, err = f.Write([]byte("UNITMAN_UNIT_NAME=" + command.Name + "\n"))
 	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_UNIT_NAME", "success", err)
 	if err != nil {
@@ -131,11 +113,9 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		return result, nil
 	}
 
-	execDockerCommand := []string{"docker-compose", "exec", "unit"}
-
 	for _, commandString := range command.Commands {
-		commandArgs := strings.Split(commandString, " ")
-		args := append(execDockerCommand, commandArgs...)
+		//commandArgs := strings.Split(commandString, " ")
+		args := []string{"docker-compose", "exec", "unit", "sh", "-c", commandString}
 		msg, errCommand := utils.ExecCommand(filepath, args)
 		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
 		if errCommand != nil {
