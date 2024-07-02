@@ -69,8 +69,11 @@ func ExecCommand(workingDirectory string, app []string) (string, error) {
 		log.Printf("cmd.Run() failed with %s\n - out: %s, err: %s", err, string(stdout), string(stderr))
 		return "", errors.New(fmt.Sprintf("%s\n%s", string(stdout), string(stderr)))
 	}
-	if errStdout != nil || errStderr != nil {
-		return "", errors.New("failed to capture stdout or stderr\n")
+	if errStdout != nil {
+		return "", errors.New("failed to capture stdout or stderr " + errStdout.Error() + "\n")
+	}
+	if errStderr != nil {
+		return "", errors.New("failed to capture stdout or stderr " + errStderr.Error() + "\n")
 	}
 	outStr, errStr := string(stdout), string(stderr)
 	return fmt.Sprintf("%s%s", outStr, errStr), nil
