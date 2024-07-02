@@ -81,7 +81,7 @@ func ExecCommand(workingDirectory string, app []string) (string, error) {
 
 func copyAndCapture(w io.Writer, r io.Reader) ([]byte, error) {
 	var out []byte
-	buf := make([]byte, 1024, 1024)
+	buf := make([]byte, 2048, 2048)
 	for {
 		n, err := r.Read(buf[:])
 		if n > 0 {
