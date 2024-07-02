@@ -70,10 +70,10 @@ func ExecCommand(workingDirectory string, app []string) (string, error) {
 		return "", errors.New(fmt.Sprintf("%s\n%s", string(stdout), string(stderr)))
 	}
 	if errStdout != nil {
-		return "", errors.New("failed to capture stdout or stderr " + errStdout.Error() + "\n")
+		return "", errors.New("failed to capture stdout " + errStdout.Error() + "\n")
 	}
 	if errStderr != nil {
-		return "", errors.New("failed to capture stdout or stderr " + errStderr.Error() + "\n")
+		return "", errors.New("failed to capture stderr " + errStderr.Error() + "\n")
 	}
 	outStr, errStr := string(stdout), string(stderr)
 	return fmt.Sprintf("%s%s", outStr, errStr), nil
