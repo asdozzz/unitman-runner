@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -56,11 +55,11 @@ func ExecCommand(workingDirectory string, app []string) (string, error) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		stdout, errStdout = copyAndCapture(os.Stdout, stdoutIn)
+		stdout, errStdout = copyAndCaptureNew(stdoutIn)
 		wg.Done()
 	}()
 
-	stderr, errStderr = copyAndCapture(os.Stderr, stderrIn)
+	stderr, errStderr = copyAndCaptureNew(stderrIn)
 
 	wg.Wait()
 
@@ -91,6 +90,26 @@ func copyAndCapture(w io.Writer, r io.Reader) ([]byte, error) {
 			if err != nil {
 				return out, err
 			}
+		}
+		if err != nil {
+			// Read returns io.EOF at the end of file, which is not an error for us
+			if err == io.EOF {
+				err = nil
+			}
+			return out, err
+		}
+	}
+}
+
+func copyAndCaptureNew(r io.Reader) ([]byte, error) {
+	var out []byte
+	buf := make([]byte, 2048, 2048)
+	for {
+		n, err := r.Read(buf[:])
+		if n > 0 {
+			d := buf[:n]
+			out = append(out, d...)
+			return out, nil
 		}
 		if err != nil {
 			// Read returns io.EOF at the end of file, which is not an error for us
