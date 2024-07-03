@@ -52,7 +52,7 @@ func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (
 	filepath = currentPath + "/" + filepath
 
 	for _, commandString := range command.Commands {
-		args := []string{"docker-compose", "exec", "unit", "sh", "-c", commandString}
+		args := []string{"docker-compose", "exec", "unit", "sh", "-c", "'" + commandString + "'"}
 		msg, errCommand := utils.ExecCommand(filepath, args)
 		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
 		if errCommand != nil {
