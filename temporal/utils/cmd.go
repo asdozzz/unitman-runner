@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -55,11 +56,11 @@ func ExecCommand(workingDirectory string, app []string) (string, error) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		stdout, errStdout = copyAndCaptureNew(stdoutIn)
+		stdout, errStdout = copyAndCapture(os.Stdout, stdoutIn)
 		wg.Done()
 	}()
 
-	stderr, errStderr = copyAndCaptureNew(stderrIn)
+	stderr, errStderr = copyAndCapture(os.Stderr, stderrIn)
 
 	wg.Wait()
 
