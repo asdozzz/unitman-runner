@@ -2,8 +2,15 @@ services:
   unit:
     container_name: ${UNITMAN_UNIT_NAME}.${UNITMAN_PROJECT_NAME}
     privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - MKNOD
     build:
       context: .
+    devices:
+      - "/dev/fuse:/dev/fuse"
+    security_opt:
+      - apparmor:unconfined
     working_dir: /app
     volumes:
       - ./app:/app
