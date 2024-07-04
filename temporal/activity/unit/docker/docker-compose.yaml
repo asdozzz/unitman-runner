@@ -1,11 +1,18 @@
 services:
   unit:
     container_name: ${UNITMAN_UNIT_NAME}.${UNITMAN_PROJECT_NAME}
-    user: podman
+    user: root
     privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - MKNOD
+    security_opt:
+      - label=disable
+      - apparmor=unconfined
     build:
       context: .
     working_dir: /app
+    userns_mode: keep-id
     volumes:
       - ./app:/app
       - ./../containers:/var/lib/containers
