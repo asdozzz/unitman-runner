@@ -56,22 +56,41 @@ func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbros
 
 	filepath = currentPath + "/" + filepath
 
-	for _, commandString := range command.Commands {
-		args := []string{"docker-compose", "exec", "unit", "sh", "-c", commandString}
-		msg, errCommand := utils.ExecCommand(filepath, args)
-		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
-		if errCommand != nil {
+	args := []string{"docker-compose", "exec", "unit", "sh", "-c", "pwd"}
+	_, err = utils.ExecCommand(filepath, args)
+
+	unitIsRunning := true
+	if err != nil {
+		if strings.Contains(err.Error(), "no such service") {
+			unitIsRunning = false
+		}
+
+		if strings.Contains(err.Error(), "is not running") {
+			unitIsRunning = false
+		}
+		result.Steps = model.AddStepToSteps(result.Steps, "check unit", "is not running", nil)
+	}
+
+	if unitIsRunning == true {
+		for _, commandString := range command.Commands {
+			args := []string{"docker-compose", "exec", "unit", "sh", "-c", commandString}
+			msg, errCommand := utils.ExecCommand(filepath, args)
+			result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
+			if errCommand != nil {
+				result.Success = 0
+				return result, nil
+			}
+		}
+
+		args := []string{"docker-compose", "down", "-v"}
+		msg, err := utils.ExecCommand(filepath, args)
+		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
+		if err != nil {
 			result.Success = 0
 			return result, nil
 		}
-	}
-
-	args := []string{"docker-compose", "down"}
-	msg, err := utils.ExecCommand(filepath, args)
-	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
-	if err != nil {
-		result.Success = 0
-		return result, nil
+	} else {
+		result.Steps = model.AddStepToSteps(result.Steps, "check unit", "unit is not running", err)
 	}
 
 	return result, nil
