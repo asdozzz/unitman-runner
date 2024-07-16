@@ -1,14 +1,12 @@
 package utils
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"os/exec"
-	"strings"
 	"sync"
 )
 
@@ -17,70 +15,13 @@ func ExecCommand(workingDirectory string, app []string) (string, error) {
 	_, app = app[0], app[1:]
 	cmd := exec.Command(x, app...)
 	cmd.Dir = workingDirectory
-
-	stdoutIn, err := cmd.StdoutPipe()
-
-	if err != nil {
-		log.Printf("Failed creating command stdoutpipe:  '%s'", err)
-		return "", err
-	}
-	defer func(stdoutIn io.ReadCloser) {
-		_ = stdoutIn.Close()
-	}(stdoutIn)
-	stdoutScanner := bufio.NewScanner(stdoutIn)
-
-	stderrIn, err := cmd.StderrPipe()
-
-	if err != nil {
-		log.Printf("Failed creating command stderrpipe:  '%s'", err)
-		return "", err
-	}
-	defer func(stderrIn io.ReadCloser) {
-		_ = stderrIn.Close()
-	}(stderrIn)
-	stderrScanner := bufio.NewScanner(stderrIn)
-
-	err = cmd.Start()
-	if err != nil {
-		log.Printf("cmd.Start() failed with '%s'\n", err)
-		return "", err
-	}
-
-	var strs = []string{}
-
-	for stdoutScanner.Scan() {
-		// Do something with the line here.
-		strs = append(strs, stdoutScanner.Text())
-		log.Println(stdoutScanner.Text())
-	}
-
-	if stdoutScanner.Err() != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		log.Printf("stdoutScanner.Err failed with %s", stdoutScanner.Err())
-		return "", errors.New(fmt.Sprintf("%s", stdoutScanner.Err()))
-	}
-
-	for stderrScanner.Scan() {
-		// Do something with the line here.
-		strs = append(strs, stderrScanner.Text())
-		log.Println(stderrScanner.Text())
-	}
-
-	if stderrScanner.Err() != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		log.Printf("stderrScanner.Err failed with %s", stderrScanner.Err())
-		return "", errors.New(fmt.Sprintf("%s", stderrScanner.Err()))
-	}
-
-	err = cmd.Wait()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("cmd.Run() failed with %s", err)
 		return "", errors.New(fmt.Sprintf("%s", err))
 	}
 
-	return strings.Join(strs, "\n"), nil
+	return string(out), nil
 }
 
 func ExecCommandOld(workingDirectory string, app []string) (string, error) {
