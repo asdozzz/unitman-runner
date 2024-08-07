@@ -14,7 +14,6 @@ services:
     working_dir: /app
     userns_mode: keep-id
     volumes:
-      - ./app:/app
       - ./../containers:/var/lib/containers
     env_file:
       - .env.unit
