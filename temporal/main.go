@@ -24,6 +24,7 @@ func Init() {
 	w := worker.New(c, "unitman-runner-queue", worker.Options{})
 	w.RegisterActivity(projectActivity.InitProjectActivity)
 	w.RegisterActivity(projectActivity.RemoveProjectActivity)
+	w.RegisterActivity(projectActivity.NachatOchistkuProektaActivity)
 	w.RegisterActivity(unitActivity.NachatSborkuUnitaActivity)
 	w.RegisterActivity(unitActivity.NachatUdalenieUnitaActivity)
 	w.RegisterActivity(unitActivity.NachatObnovlenieUnitaActivity)
