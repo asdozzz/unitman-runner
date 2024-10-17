@@ -9,7 +9,6 @@ services:
     security_opt:
       - label=disable
       - apparmor=unconfined
-    mem_limit: "2g"
     build:
       context: .
     working_dir: /app
