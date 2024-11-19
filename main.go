@@ -1,6 +1,8 @@
 package main
 
-import "runner/temporal"
+import (
+	"runner/temporal"
+)
 
 func main() {
 	temporal.Init()

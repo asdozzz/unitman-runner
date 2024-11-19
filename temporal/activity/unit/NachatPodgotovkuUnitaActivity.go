@@ -19,6 +19,7 @@ type NachatPodgotovkuUnita struct {
 	StorageUrl  string
 	Commands    []string
 	Variables   []model.UnitConfigVariable
+	Caches      []Cache
 }
 
 type ResultatPodgotovkiUnita struct {
@@ -133,6 +134,8 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		result.Success = 0
 		return result, nil
 	}
+
+	RestoreCache(command.ProjectName, command.Name, command.ProjectId, command.Id, command.Caches)
 
 	for _, commandString := range command.Commands {
 		//commandArgs := strings.Split(commandString, " ")

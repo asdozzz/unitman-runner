@@ -18,6 +18,7 @@ type NachatZapuskUnita struct {
 	StorageUrl  string
 	Commands    []string
 	Variables   []model.UnitConfigVariable
+	Caches      []Cache
 }
 
 type ResultatZapuskaUnita struct {
@@ -68,6 +69,15 @@ func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (
 			return result, nil
 		}
 	}
+
+	/*var caches []Cache
+	caches = append(caches, Cache{
+		ServiceName: "web",
+		Keys:        []string{"composer.lock"},
+		Paths:       []string{"vendor"},
+	})
+	*/
+	MakeCache(command.ProjectName, command.Name, command.ProjectId, command.Id, command.Caches)
 
 	result.Success = 1
 	return result, nil
