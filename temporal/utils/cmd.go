@@ -35,10 +35,13 @@ func ExecCommand(workingDirectory string, app []string) (string, error) {
 	cmd.Stderr = io.MultiWriter(os.Stderr, &stderrBuf)
 
 	err := cmd.Run()
-	if err != nil {
-		return "", errors.New("cmd.Run() failed with %s\n" + err.Error())
-	}
+
 	outStr, errStr := string(stdoutBuf.Bytes()), string(stderrBuf.Bytes())
+	if err != nil {
+		log.Printf("cmd.Run() failed with %s\n - out: %s, err: %s", err, outStr, errStr)
+		return "", errors.New(fmt.Sprintf("%s%s", outStr, errStr))
+		//return "", errors.New("cmd.Run() failed with %s\n" + err.Error())
+	}
 
 	return fmt.Sprintf("%s%s", outStr, errStr), nil
 }
