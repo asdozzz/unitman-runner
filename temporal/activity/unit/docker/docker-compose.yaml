@@ -16,7 +16,7 @@ services:
     volumes:
       - ./../containers:/var/lib/containers
     env_file:
-      - .env.unit
+      - .env
 
 networks:
   default:

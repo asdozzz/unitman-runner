@@ -68,7 +68,7 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		return result, nil
 	}
 
-	envFilePath := filepath + "/.env.unit"
+	envFilePath := filepath + "/.env"
 
 	err = os.Truncate(envFilePath, 0)
 	result.Steps = model.AddStepToSteps(result.Steps, "clear env file", "success", err)
