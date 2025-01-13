@@ -3,6 +3,7 @@ package unit
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -69,6 +70,10 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 	}
 
 	envFilePath := filepath + "/.env"
+
+	if _, err := os.Stat(envFilePath); errors.Is(err, os.ErrNotExist) {
+		envFilePath = filepath + "/.env.unit"
+	}
 
 	err = os.Truncate(envFilePath, 0)
 	result.Steps = model.AddStepToSteps(result.Steps, "clear env file", "success", err)
