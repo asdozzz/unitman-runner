@@ -9,9 +9,9 @@ import (
 	"runner/temporal/utils"
 )
 
-func Init() {
+func Init(config utils.Configuration) {
 	// Create the client object just once per process
-	c, err := utils.MakeTemporalClient()
+	c, err := utils.MakeTemporalClient(config)
 
 	if err != nil {
 		log.Fatalln("unable to connect to temporal", err)

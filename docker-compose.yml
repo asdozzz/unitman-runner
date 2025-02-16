@@ -1,0 +1,9 @@
+services:
+  unitman-proxy:
+    image: nginx
+    restart: always
+    volumes:
+      - ./.docker/proxy/nginx.conf:/etc/nginx/nginx.conf
+      - ./.docker/proxy/index.html:/usr/share/nginx/html/index.html
+    ports:
+      - '8087:80'
