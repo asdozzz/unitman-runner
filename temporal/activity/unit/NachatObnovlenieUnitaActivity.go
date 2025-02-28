@@ -80,7 +80,7 @@ func NachatObnovlenieUnitaActivity(ctx context.Context, command NachatObnovlenie
 		}
 	}
 
-	b, _ := os.ReadFile(filepath + "/unitman.yaml") // just pass the file name
+	b, _ := os.ReadFile(filepathApp + "/unitman.yaml") // just pass the file name
 	if b != nil {
 		result.Config = string(b)
 	}
