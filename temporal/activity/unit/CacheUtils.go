@@ -107,6 +107,13 @@ func RestoreCache(ProjectName string, UnitName string, ProjectId string, UnitId 
 			continue
 		}
 	}
+
+	args := []string{"docker-compose", "exec", "unit", "sh", "-c", "rm -rf cache"}
+	_, errCommand := utils.ExecCommand(unitPath, args)
+
+	if errCommand != nil {
+		fmt.Println("docker error remove cache dir " + errCommand.Error())
+	}
 }
 
 func makeSumFromString(sumFiles string) string {
