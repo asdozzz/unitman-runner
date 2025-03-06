@@ -13,6 +13,7 @@ services:
       context: .
     working_dir: /app
     userns_mode: keep-id
+    mem_limit: "3g"
     volumes:
       - ./../containers:/var/lib/containers
     env_file:
