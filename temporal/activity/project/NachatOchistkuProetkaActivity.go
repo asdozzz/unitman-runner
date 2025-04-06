@@ -92,20 +92,6 @@ func NachatOchistkuProektaActivity(ctx context.Context, command NachatOchistkuPr
 		return result, nil
 	}
 
-	err = os.Setenv("UNITMAN_PROJECT_NAME", command.ProjectName)
-	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_PROJECT_NAME", "success", err)
-	if err != nil {
-		result.Success = 0
-		return result, nil
-	}
-
-	err = os.Setenv("UNITMAN_UNIT_NAME", "clearing")
-	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_UNIT_NAME", "success", err)
-	if err != nil {
-		result.Success = 0
-		return result, nil
-	}
-
 	envFilePath := filepath + "/.env"
 
 	err = os.Truncate(envFilePath, 0)
@@ -135,8 +121,15 @@ func NachatOchistkuProektaActivity(ctx context.Context, command NachatOchistkuPr
 		return result, nil
 	}
 
-	_, err = f.Write([]byte("COMPOSE_PROJECT_NAME=" + "clearing" + "_" + command.ProjectName + "\n"))
-	result.Steps = model.AddStepToSteps(result.Steps, "Setenv COMPOSE_PROJECT_NAME", "success", err)
+	_, err = f.Write([]byte("UNITMAN_UNIT_NAME=clearing"))
+	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_UNIT_NAME", "success", err)
+	if err != nil {
+		result.Success = 0
+		return result, nil
+	}
+
+	_, err = f.Write([]byte("UNITMAN_PROJECT_NAME=" + command.ProjectName))
+	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_PROJECT_NAME", "success", err)
 	if err != nil {
 		result.Success = 0
 		return result, nil
