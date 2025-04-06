@@ -159,7 +159,6 @@ func NachatOchistkuProektaActivity(ctx context.Context, command NachatOchistkuPr
 		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
 		if errCommand != nil {
 			result.Success = 0
-			return result, nil
 		}
 	}
 
