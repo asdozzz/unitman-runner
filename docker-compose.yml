@@ -7,3 +7,8 @@ services:
       - ./.docker/proxy/index.html:/usr/share/nginx/html/index.html
     ports:
       - '8087:80'
+
+networks:
+  default:
+    external: true
+    name: unitman_default
