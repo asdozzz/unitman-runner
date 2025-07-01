@@ -2,13 +2,10 @@ package utils
 
 import (
 	"go.temporal.io/sdk/client"
+	"runner/config"
 )
 
-type Configuration struct {
-	TemporalHost string
-}
-
-func MakeTemporalClient(config Configuration) (client.Client, error) {
+func MakeTemporalClient(config config.Configuration) (client.Client, error) {
 	c, err := client.Dial(client.Options{
 		HostPort: config.TemporalHost, //"localhost:7233",
 	})

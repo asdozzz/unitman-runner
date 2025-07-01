@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
 	"os"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
@@ -20,27 +21,29 @@ type NachatSbrosPodgotovkiUnita struct {
 }
 
 type ResultatSbrosaPodgotovkiUnita struct {
-	UnitId  string
-	Success int
-	Steps   []model.Step
+	ResponseId string
+	UnitId     string
+	Success    int
+	Steps      []model.Step
 }
 
-func sendErrorResponse(result *ResultatSbrosaPodgotovkiUnita, err error) (*ResultatSbrosaPodgotovkiUnita, error) {
-	result.Success = 0
-	return result, nil
+func wrapResultatSbrosaPodgotovki(result *ResultatSbrosaPodgotovkiUnita) *ResultatSbrosaPodgotovkiUnita {
+	SaveUnitSteps(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps})
+	return result
 }
 
 func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbrosPodgotovkiUnita) (*ResultatSbrosaPodgotovkiUnita, error) {
 	result := &ResultatSbrosaPodgotovkiUnita{
-		UnitId:  command.UnitId,
-		Success: 1,
-		Steps:   []model.Step{},
+		ResponseId: uuid.New().String(),
+		UnitId:     command.UnitId,
+		Success:    1,
+		Steps:      []model.Step{},
 	}
 
 	out, err := json.Marshal(command)
-	result.Steps = model.AddStepToSteps(result.Steps, "json.Marshal", "success", err)
 	if err != nil {
-		return sendErrorResponse(result, err)
+		result.Success = 0
+		return wrapResultatSbrosaPodgotovki(result), nil
 	}
 
 	fmt.Println("NachatSbrosPodgotovkiUnita:" + string(out))
@@ -48,10 +51,9 @@ func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbros
 	filepath := "./projects/" + command.ProjectId + "/units/" + command.UnitId
 
 	currentPath, err := os.Getwd()
-	result.Steps = model.AddStepToSteps(result.Steps, "Getwd", "success", err)
 	if err != nil {
 		result.Success = 0
-		return result, nil
+		return wrapResultatSbrosaPodgotovki(result), nil
 	}
 
 	filepath = currentPath + "/" + filepath
@@ -78,7 +80,7 @@ func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbros
 			result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
 			if errCommand != nil {
 				result.Success = 0
-				return result, nil
+				return wrapResultatSbrosaPodgotovki(result), nil
 			}
 		}
 
@@ -87,11 +89,11 @@ func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbros
 		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
 		if err != nil {
 			result.Success = 0
-			return result, nil
+			return wrapResultatSbrosaPodgotovki(result), nil
 		}
 	} else {
 		result.Steps = model.AddStepToSteps(result.Steps, "check unit", "unit is not running", err)
 	}
 
-	return result, nil
+	return wrapResultatSbrosaPodgotovki(result), nil
 }

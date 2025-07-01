@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
 	"os"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
@@ -21,21 +22,27 @@ type NachatOstanovkuUnita struct {
 }
 
 type ResultatOstanovkiUnita struct {
-	Success int
-	Steps   []model.Step
+	Success    int
+	Steps      []model.Step
+	ResponseId string
+}
+
+func wrapResultatOstanovki(result *ResultatOstanovkiUnita) *ResultatOstanovkiUnita {
+	SaveUnitSteps(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps})
+	return result
 }
 
 func NachatOstanokuUnitaActivity(ctx context.Context, command NachatOstanovkuUnita) (*ResultatOstanovkiUnita, error) {
 	result := &ResultatOstanovkiUnita{
-		Success: 1,
-		Steps:   []model.Step{},
+		Success:    1,
+		Steps:      []model.Step{},
+		ResponseId: uuid.New().String(),
 	}
 
 	out, err := json.Marshal(command)
-	result.Steps = model.AddStepToSteps(result.Steps, "json.Marshal", "success", err)
 	if err != nil {
 		result.Success = 0
-		return result, nil
+		return wrapResultatOstanovki(result), nil
 	}
 
 	fmt.Println("ResultatOstanovkiUnita:" + string(out))
@@ -43,10 +50,9 @@ func NachatOstanokuUnitaActivity(ctx context.Context, command NachatOstanovkuUni
 	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
 
 	currentPath, err := os.Getwd()
-	result.Steps = model.AddStepToSteps(result.Steps, "Getwd", "success", err)
 	if err != nil {
 		result.Success = 0
-		return result, nil
+		return wrapResultatOstanovki(result), nil
 	}
 
 	filepath = currentPath + "/" + filepath
@@ -57,10 +63,10 @@ func NachatOstanokuUnitaActivity(ctx context.Context, command NachatOstanovkuUni
 		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
 		if errCommand != nil {
 			result.Success = 0
-			return result, nil
+			return wrapResultatOstanovki(result), nil
 		}
 	}
 
 	result.Success = 1
-	return result, nil
+	return wrapResultatOstanovki(result), nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
 	"os"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
@@ -22,21 +23,27 @@ type NachatZapuskUnita struct {
 }
 
 type ResultatZapuskaUnita struct {
-	Success int
-	Steps   []model.Step
+	Success    int
+	Steps      []model.Step
+	ResponseId string
+}
+
+func wrapResultatZapuska(result *ResultatZapuskaUnita) *ResultatZapuskaUnita {
+	SaveUnitSteps(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps})
+	return result
 }
 
 func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (*ResultatZapuskaUnita, error) {
 	result := &ResultatZapuskaUnita{
-		Success: 1,
-		Steps:   []model.Step{},
+		Success:    1,
+		Steps:      []model.Step{},
+		ResponseId: uuid.New().String(),
 	}
 
 	out, err := json.Marshal(command)
-	result.Steps = model.AddStepToSteps(result.Steps, "json.Marshal", "success", err)
 	if err != nil {
 		result.Success = 0
-		return result, nil
+		return wrapResultatZapuska(result), nil
 	}
 
 	fmt.Println("ResultatZapuskaUnita:" + string(out))
@@ -44,10 +51,9 @@ func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (
 	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
 
 	currentPath, err := os.Getwd()
-	result.Steps = model.AddStepToSteps(result.Steps, "Getwd", "success", err)
 	if err != nil {
 		result.Success = 0
-		return result, nil
+		return wrapResultatZapuska(result), nil
 	}
 
 	filepath = currentPath + "/" + filepath
@@ -57,7 +63,7 @@ func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (
 	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
 	if errCommand != nil {
 		result.Success = 0
-		return result, nil
+		return wrapResultatZapuska(result), nil
 	}
 
 	for _, commandString := range command.Commands {
@@ -66,7 +72,7 @@ func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (
 		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
 		if errCommand != nil {
 			result.Success = 0
-			return result, nil
+			return wrapResultatZapuska(result), nil
 		}
 	}
 
@@ -80,5 +86,5 @@ func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (
 	MakeCache(command.ProjectName, command.Name, command.ProjectId, command.Id, command.Caches)
 
 	result.Success = 1
-	return result, nil
+	return wrapResultatZapuska(result), nil
 }

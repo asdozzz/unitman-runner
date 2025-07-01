@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"log"
 	"os"
 	"runner/temporal/activity/unit/model"
@@ -24,22 +25,28 @@ type NachatPodgotovkuUnita struct {
 }
 
 type ResultatPodgotovkiUnita struct {
-	Success int
-	Steps   []model.Step
-	Config  string
+	Success    int
+	Steps      []model.Step
+	Config     string
+	ResponseId string
+}
+
+func wrapResultatPogotovki(result *ResultatPodgotovkiUnita) *ResultatPodgotovkiUnita {
+	SaveUnitSteps(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps})
+	return result
 }
 
 func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovkuUnita) (*ResultatPodgotovkiUnita, error) {
 	result := &ResultatPodgotovkiUnita{
-		Success: 1,
-		Steps:   []model.Step{},
+		Success:    1,
+		Steps:      []model.Step{},
+		ResponseId: uuid.New().String(),
 	}
 
 	out, err := json.Marshal(command)
-	result.Steps = model.AddStepToSteps(result.Steps, "json.Marshal", "success", err)
 	if err != nil {
 		result.Success = 0
-		return result, nil
+		return wrapResultatPogotovki(result), nil
 	}
 
 	fmt.Println("ResultatPodgotovkiUnita:" + string(out))
@@ -47,26 +54,23 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
 
 	currentPath, err := os.Getwd()
-	result.Steps = model.AddStepToSteps(result.Steps, "Getwd", "success", err)
 	if err != nil {
 		result.Success = 0
-		return result, nil
+		return wrapResultatPogotovki(result), nil
 	}
 
 	filepath = currentPath + "/" + filepath
 
 	err = os.Setenv("UNITMAN_PROJECT_NAME", command.ProjectName)
-	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_PROJECT_NAME", "success", err)
 	if err != nil {
 		result.Success = 0
-		return result, nil
+		return wrapResultatPogotovki(result), nil
 	}
 
 	err = os.Setenv("UNITMAN_UNIT_NAME", command.Name)
-	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_UNIT_NAME", "success", err)
 	if err != nil {
 		result.Success = 0
-		return result, nil
+		return wrapResultatPogotovki(result), nil
 	}
 
 	envFilePath := filepath + "/.env"
@@ -76,17 +80,15 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 	}
 
 	err = os.Truncate(envFilePath, 0)
-	result.Steps = model.AddStepToSteps(result.Steps, "clear env file", "success", err)
 	if err != nil {
 		result.Success = 0
-		return result, nil
+		return wrapResultatPogotovki(result), nil
 	}
 
 	f, err := os.OpenFile(envFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	result.Steps = model.AddStepToSteps(result.Steps, "open env file", "success", err)
 	if err != nil {
 		result.Success = 0
-		return result, nil
+		return wrapResultatPogotovki(result), nil
 	}
 	defer func(f *os.File) {
 		err := f.Close()
@@ -96,31 +98,27 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 	}(f)
 
 	_, err = f.Write([]byte("PODMAN_IGNORE_CGROUPSV1_WARNING=1\n"))
-	result.Steps = model.AddStepToSteps(result.Steps, "Setenv PODMAN_IGNORE_CGROUPSV1_WARNING", "success", err)
 	if err != nil {
 		result.Success = 0
-		return result, nil
+		return wrapResultatPogotovki(result), nil
 	}
 
 	_, err = f.Write([]byte("UNITMAN_UNIT_NAME=" + command.Name + "\n"))
-	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_UNIT_NAME", "success", err)
 	if err != nil {
 		result.Success = 0
-		return result, nil
+		return wrapResultatPogotovki(result), nil
 	}
 
 	_, err = f.Write([]byte("UNITMAN_PROJECT_NAME=" + command.ProjectName + "\n"))
-	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_PROJECT_NAME", "success", err)
 	if err != nil {
 		result.Success = 0
-		return result, nil
+		return wrapResultatPogotovki(result), nil
 	}
 
 	_, err = f.Write([]byte("COMPOSE_PROJECT_NAME=" + command.Name + "_" + command.ProjectName + "\n"))
-	result.Steps = model.AddStepToSteps(result.Steps, "Setenv COMPOSE_PROJECT_NAME", "success", err)
 	if err != nil {
 		result.Success = 0
-		return result, nil
+		return wrapResultatPogotovki(result), nil
 	}
 
 	for _, variableItem := range command.Variables {
@@ -128,7 +126,7 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_"+variableItem.Id, "success", err)
 		if err != nil {
 			result.Success = 0
-			return result, nil
+			return wrapResultatPogotovki(result), nil
 		}
 	}
 
@@ -137,7 +135,7 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
 	if err != nil {
 		result.Success = 0
-		return result, nil
+		return wrapResultatPogotovki(result), nil
 	}
 
 	RestoreCache(command.ProjectName, command.Name, command.ProjectId, command.Id, command.Caches)
@@ -149,9 +147,9 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
 		if errCommand != nil {
 			result.Success = 0
-			return result, nil
+			return wrapResultatPogotovki(result), nil
 		}
 	}
 
-	return result, nil
+	return wrapResultatPogotovki(result), nil
 }

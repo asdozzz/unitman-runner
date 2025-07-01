@@ -1,3 +1,4 @@
 {
-    "TemporalHost": "localhost:7233"
+    "TemporalHost": "localhost:7233",
+    "ApiHost": "http://localhost:8082"
 }

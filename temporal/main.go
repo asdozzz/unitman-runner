@@ -3,13 +3,14 @@ package temporal
 import (
 	"go.temporal.io/sdk/worker"
 	"log"
+	"runner/config"
 	projectActivity "runner/temporal/activity/project"
 	"runner/temporal/activity/runner"
 	unitActivity "runner/temporal/activity/unit"
 	"runner/temporal/utils"
 )
 
-func Init(config utils.Configuration) {
+func Init(config config.Configuration) {
 	// Create the client object just once per process
 	c, err := utils.MakeTemporalClient(config)
 
