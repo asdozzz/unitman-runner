@@ -18,7 +18,7 @@ func makeSha1Sums(cache Cache, unitPath string) (bool, []string) {
 	isValidKeys := true
 	var sha1Sums []string
 	for _, key := range cache.Keys {
-		args := []string{"docker-compose", "exec", "unit", "sh", "-c", "sha1sum " + key}
+		args := []string{"docker", "compose", "exec", "unit", "sh", "-c", "sha1sum " + key}
 		sha1Sum, errCommand := utils.ExecCommand(unitPath, args)
 
 		if errCommand != nil {
@@ -83,7 +83,7 @@ func RestoreCache(ProjectName string, UnitName string, ProjectId string, UnitId 
 			break
 		}
 
-		args := []string{"docker-compose", "cp", archivePath, "unit:/app/"}
+		args := []string{"docker", "compose", "cp", archivePath, "unit:/app/"}
 		_, errCommand := utils.ExecCommand(unitPath, args)
 
 		if errCommand != nil {
@@ -91,7 +91,7 @@ func RestoreCache(ProjectName string, UnitName string, ProjectId string, UnitId 
 			continue
 		}
 
-		args = []string{"docker-compose", "exec", "unit", "sh", "-c", "tar -xzvf " + archiveName + " ."}
+		args = []string{"docker", "compose", "exec", "unit", "sh", "-c", "tar -xzvf " + archiveName + " ."}
 		_, errCommand = utils.ExecCommand(unitPath, args)
 
 		if errCommand != nil {
@@ -99,7 +99,7 @@ func RestoreCache(ProjectName string, UnitName string, ProjectId string, UnitId 
 			continue
 		}
 
-		args = []string{"docker-compose", "exec", "unit", "sh", "-c", "rm -rf " + archiveName}
+		args = []string{"docker", "compose", "exec", "unit", "sh", "-c", "rm -rf " + archiveName}
 		_, errCommand = utils.ExecCommand(unitPath, args)
 
 		if errCommand != nil {
@@ -108,7 +108,7 @@ func RestoreCache(ProjectName string, UnitName string, ProjectId string, UnitId 
 		}
 	}
 
-	args := []string{"docker-compose", "exec", "unit", "sh", "-c", "rm -rf cache"}
+	args := []string{"docker", "compose", "exec", "unit", "sh", "-c", "rm -rf cache"}
 	_, errCommand := utils.ExecCommand(unitPath, args)
 
 	if errCommand != nil {
@@ -152,7 +152,7 @@ func MakeCache(ProjectName string, UnitName string, ProjectId string, UnitId str
 
 	unitPath := projectPath + "units/" + UnitId
 
-	args := []string{"docker-compose", "exec", "unit", "sh", "-c", "podman-compose ps --format='{{.ID}}###{{.Names}}'"}
+	args := []string{"docker", "compose", "exec", "unit", "sh", "-c", "podman-compose ps --format='{{.ID}}###{{.Names}}'"}
 	resultContainers, errCommand := utils.ExecCommand(unitPath, args)
 
 	if errCommand != nil {
@@ -185,7 +185,7 @@ func MakeCache(ProjectName string, UnitName string, ProjectId string, UnitId str
 			contanerCacheDir := "cache/" + cache.ServiceName + "/"
 			contanerCacheDirFiles := contanerCacheDir + "/files/"
 
-			args = []string{"docker-compose", "exec", "unit", "sh", "-c", "mkdir -p " + contanerCacheDirFiles}
+			args = []string{"docker", "compose", "exec", "unit", "sh", "-c", "mkdir -p " + contanerCacheDirFiles}
 			_, errCommand = utils.ExecCommand(unitPath, args)
 
 			if errCommand != nil {
@@ -195,7 +195,7 @@ func MakeCache(ProjectName string, UnitName string, ProjectId string, UnitId str
 			}
 
 			for _, path := range cache.Paths {
-				args := []string{"docker-compose", "exec", "unit", "sh", "-c", "podman cp " + id + ":" + path + " " + contanerCacheDirFiles + path}
+				args := []string{"docker", "compose", "exec", "unit", "sh", "-c", "podman cp " + id + ":" + path + " " + contanerCacheDirFiles + path}
 				_, errCommand := utils.ExecCommand(unitPath, args)
 
 				if errCommand != nil {
@@ -229,7 +229,7 @@ func MakeCache(ProjectName string, UnitName string, ProjectId string, UnitId str
 		archiveName := makeSumFromString(strings.Join(sha1Sums, "")) + ".tar.gz"
 
 		cmdMakeArchive := "tar -czf " + archiveName + " --directory=" + contanerCacheDir + "files ."
-		args = []string{"docker-compose", "exec", "unit", "sh", "-c", cmdMakeArchive}
+		args = []string{"docker", "compose", "exec", "unit", "sh", "-c", cmdMakeArchive}
 		_, errCommand = utils.ExecCommand(unitPath, args)
 
 		if errCommand != nil {
@@ -238,7 +238,7 @@ func MakeCache(ProjectName string, UnitName string, ProjectId string, UnitId str
 			continue
 		}
 
-		args = []string{"docker-compose", "cp", "-a", "unit:/app/" + archiveName, projectServiceCachePath}
+		args = []string{"docker", "compose", "cp", "-a", "unit:/app/" + archiveName, projectServiceCachePath}
 		_, errCommand = utils.ExecCommand(unitPath, args)
 
 		if errCommand != nil {
@@ -246,7 +246,7 @@ func MakeCache(ProjectName string, UnitName string, ProjectId string, UnitId str
 			continue
 		}
 
-		args = []string{"docker-compose", "exec", "unit", "sh", "-c", "rm -rf " + archiveName}
+		args = []string{"docker", "compose", "exec", "unit", "sh", "-c", "rm -rf " + archiveName}
 		_, errCommand = utils.ExecCommand(unitPath, args)
 	}
 }

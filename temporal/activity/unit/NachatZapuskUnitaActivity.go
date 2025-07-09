@@ -58,7 +58,7 @@ func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (
 
 	filepath = currentPath + "/" + filepath
 
-	args := []string{"docker-compose", "exec", "unit", "sh", "-c", "podman pod rm pod_" + command.Name + "_" + command.ProjectName + " --force"}
+	args := []string{"docker", "compose", "exec", "unit", "sh", "-c", "podman pod rm pod_" + command.Name + "_" + command.ProjectName + " --force"}
 	msg, errCommand := utils.ExecCommand(filepath, args)
 	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
 	if errCommand != nil {
@@ -67,7 +67,7 @@ func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (
 	}
 
 	for _, commandString := range command.Commands {
-		args := []string{"docker-compose", "exec", "unit", "sh", "-c", commandString}
+		args := []string{"docker", "compose", "exec", "unit", "sh", "-c", commandString}
 		msg, errCommand := utils.ExecCommand(filepath, args)
 		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
 		if errCommand != nil {

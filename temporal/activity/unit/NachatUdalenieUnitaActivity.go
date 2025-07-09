@@ -46,7 +46,7 @@ func NachatUdalenieUnitaActivity(ctx context.Context, command NachatUdalenieUnit
 
 	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
 
-	args := []string{"docker-compose", "exec", "unit", "sh", "-c", "pwd"}
+	args := []string{"docker", "compose", "exec", "unit", "sh", "-c", "pwd"}
 	_, err = utils.ExecCommand(filepath, args)
 
 	unitIsRunning := true
@@ -62,7 +62,7 @@ func NachatUdalenieUnitaActivity(ctx context.Context, command NachatUdalenieUnit
 	}
 
 	if unitIsRunning {
-		args = []string{"docker-compose", "down", "-v"}
+		args = []string{"docker", "compose", "down", "-v"}
 		msg, err := utils.ExecCommand(filepath, args)
 		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
 		if err != nil {

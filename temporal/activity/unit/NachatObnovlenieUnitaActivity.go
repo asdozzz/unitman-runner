@@ -56,7 +56,7 @@ func NachatObnovlenieUnitaActivity(ctx context.Context, command NachatObnovlenie
 		return result, nil
 	}
 
-	args = []string{"docker-compose", "exec", "unit", "sh", "-c", "pwd"}
+	args = []string{"docker", "compose", "exec", "unit", "sh", "-c", "pwd"}
 	_, err = utils.ExecCommand(filepath, args)
 
 	unitIsRunning := true
@@ -71,7 +71,7 @@ func NachatObnovlenieUnitaActivity(ctx context.Context, command NachatObnovlenie
 	}
 
 	if unitIsRunning {
-		args = []string{"docker-compose", "cp", "-a", filepathApp, "unit:/"}
+		args = []string{"docker", "compose", "cp", "-a", filepathApp, "unit:/"}
 		msg, err := utils.ExecCommand(filepath, args)
 		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
 		if err != nil {

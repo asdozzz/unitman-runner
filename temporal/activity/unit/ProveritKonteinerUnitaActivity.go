@@ -41,7 +41,7 @@ func ProveritKonteinerUnitaActivity(ctx context.Context, command ProveritKontein
 
 	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
 
-	args := []string{"docker-compose", "exec", "unit", "sh", "-c", "pwd"}
+	args := []string{"docker", "compose", "exec", "unit", "sh", "-c", "pwd"}
 	_, err = utils.ExecCommand(filepath, args)
 
 	if err != nil {

@@ -135,7 +135,7 @@ func NachatOchistkuProektaActivity(ctx context.Context, command NachatOchistkuPr
 		return result, nil
 	}
 
-	args = []string{"docker-compose", "up", "-d", "--build"}
+	args = []string{"docker", "compose", "up", "-d", "--build"}
 	msg, err = utils.ExecCommand(filepath, args)
 	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
 	if err != nil {
@@ -147,7 +147,7 @@ func NachatOchistkuProektaActivity(ctx context.Context, command NachatOchistkuPr
 
 	for _, commandString := range Commands {
 		//commandArgs := strings.Split(commandString, " ")
-		args := []string{"docker-compose", "exec", "unit", "sh", "-c", commandString}
+		args := []string{"docker", "compose", "exec", "unit", "sh", "-c", commandString}
 		msg, errCommand := utils.ExecCommand(filepath, args)
 		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
 		if errCommand != nil {
@@ -155,7 +155,7 @@ func NachatOchistkuProektaActivity(ctx context.Context, command NachatOchistkuPr
 		}
 	}
 
-	args = []string{"docker-compose", "down"}
+	args = []string{"docker", "compose", "down"}
 	msg, err = utils.ExecCommand(filepath, args)
 	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
 	if err != nil {

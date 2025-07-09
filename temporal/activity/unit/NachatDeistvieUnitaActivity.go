@@ -58,7 +58,7 @@ func NachatDeistvieUnitaActivity(ctx context.Context, command NachatZapuskUnita)
 		for _, variableItem := range command.Variables {
 			commandStringAfteReplace = strings.Replace(commandStringAfteReplace, "${UNITMAN_ACTION_"+variableItem.Id+"}", variableItem.Value, 1)
 		}
-		args := []string{"docker-compose", "exec", "unit", "sh", "-c", commandStringAfteReplace}
+		args := []string{"docker", "compose", "exec", "unit", "sh", "-c", commandStringAfteReplace}
 		msg, errCommand := utils.ExecCommand(filepath, args)
 		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
 		if errCommand != nil {

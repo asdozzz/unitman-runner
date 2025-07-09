@@ -58,7 +58,7 @@ func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbros
 
 	filepath = currentPath + "/" + filepath
 
-	args := []string{"docker-compose", "exec", "unit", "sh", "-c", "pwd"}
+	args := []string{"docker", "compose", "exec", "unit", "sh", "-c", "pwd"}
 	_, err = utils.ExecCommand(filepath, args)
 
 	unitIsRunning := true
@@ -75,7 +75,7 @@ func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbros
 
 	if unitIsRunning == true {
 		for _, commandString := range command.Commands {
-			args := []string{"docker-compose", "exec", "unit", "sh", "-c", commandString}
+			args := []string{"docker", "compose", "exec", "unit", "sh", "-c", commandString}
 			msg, errCommand := utils.ExecCommand(filepath, args)
 			result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
 			if errCommand != nil {
@@ -84,7 +84,7 @@ func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbros
 			}
 		}
 
-		args := []string{"docker-compose", "down", "-v"}
+		args := []string{"docker", "compose", "down", "-v"}
 		msg, err := utils.ExecCommand(filepath, args)
 		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
 		if err != nil {
