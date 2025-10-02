@@ -1,0 +1,8 @@
+FROM quay.io/podman/stable
+
+RUN yum -y install gettext
+RUN dnf install -y podman-compose
+RUN yum -y install  fuse-overlayfs
+
+ENTRYPOINT ["tail"]
+CMD ["-f","/dev/null"]

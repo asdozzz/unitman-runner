@@ -1,0 +1,6 @@
+docker buildx build -t unitman-unit:{version} .
+
+docker login
+
+docker tag unitman-unit:{version} asdozzz/unitman-unit:{version}
+docker push asdozzz/unitman-unit:{version}

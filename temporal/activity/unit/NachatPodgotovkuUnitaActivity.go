@@ -13,15 +13,20 @@ import (
 	"strings"
 )
 
+type ContainerSettings struct {
+	MemoryLimit string
+}
+
 type NachatPodgotovkuUnita struct {
-	ProjectId   string
-	ProjectName string
-	Id          string
-	Name        string
-	StorageUrl  string
-	Commands    []string
-	Variables   []model.UnitConfigVariable
-	Caches      []Cache
+	ProjectId         string
+	ProjectName       string
+	Id                string
+	Name              string
+	StorageUrl        string
+	Commands          []string
+	Variables         []model.UnitConfigVariable
+	Caches            []Cache
+	ContainerSettings ContainerSettings
 }
 
 type ResultatPodgotovkiUnita struct {
@@ -68,6 +73,12 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 	}
 
 	err = os.Setenv("UNITMAN_UNIT_NAME", command.Name)
+	if err != nil {
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
+	}
+
+	err = os.Setenv("UNITMAN_MEMORY_LIMIT", command.ContainerSettings.MemoryLimit)
 	if err != nil {
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil

@@ -34,7 +34,7 @@ func Init(config config.Configuration) {
 	w.RegisterActivity(unitActivity.NachatZapuskUnitaActivity)
 	w.RegisterActivity(unitActivity.NachatOstanokuUnitaActivity)
 	w.RegisterActivity(runner.RunnerHealthCheckActivity)
-	w.RegisterActivity(unitActivity.NachatIzmeneniyaVetkiUnitaActivity)
+	w.RegisterActivity(runner.OchistkaDockeraActivity)
 	w.RegisterActivity(unitActivity.NachatDeistvieUnitaActivity)
 	w.RegisterActivity(unitActivity.ProveritKonteinerUnitaActivity)
 

@@ -13,7 +13,7 @@ services:
       context: .
     working_dir: /app
     userns_mode: keep-id
-    mem_limit: "3g"
+    mem_limit: ${UNITMAN_MEMORY_LIMIT:-3g}
     volumes:
       - ./../containers:/var/lib/containers
     env_file:
