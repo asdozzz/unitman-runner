@@ -1,4 +1,6 @@
-FROM asdozzz/unitman-unit:0.0.1
+FROM asdozzz/unitman-unit:latest
+
+RUN yum -y install  fuse-overlayfs
 
 WORKDIR /app
 
