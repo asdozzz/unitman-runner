@@ -76,14 +76,8 @@ func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (
 		}
 	}
 
-	/*var caches []Cache
-	caches = append(caches, Cache{
-		ServiceName: "web",
-		Keys:        []string{"composer.lock"},
-		Paths:       []string{"vendor"},
-	})
-	*/
-	MakeCache(command.ProjectName, command.Name, command.ProjectId, command.Id, command.Caches)
+	go MakeCache(command.ProjectName, command.Name, command.ProjectId, command.Id, command.Caches)
+	//go SavePodmanImages(command.ProjectName, command.ProjectId, command.Id)
 
 	result.Success = 1
 	return wrapResultatZapuska(result), nil

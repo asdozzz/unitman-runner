@@ -150,6 +150,7 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 	}
 
 	RestoreCache(command.ProjectName, command.Name, command.ProjectId, command.Id, command.Caches)
+	//RestoreImages(command.ProjectId, command.Id)
 
 	for _, commandString := range command.Commands {
 		//commandArgs := strings.Split(commandString, " ")
