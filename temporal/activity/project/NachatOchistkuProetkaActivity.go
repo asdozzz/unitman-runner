@@ -113,7 +113,7 @@ func NachatOchistkuProektaActivity(ctx context.Context, command NachatOchistkuPr
 			log.Fatal(err)
 		}
 	}(f)
-
+	//Записываем в .env чисто для дебага, чтобы каждый раз не вводить через переменные окружения вручную.
 	_, err = f.Write([]byte("PODMAN_IGNORE_CGROUPSV1_WARNING=1\n"))
 	result.Steps = model.AddStepToSteps(result.Steps, "Setenv PODMAN_IGNORE_CGROUPSV1_WARNING", "success", err)
 	if err != nil {
@@ -121,15 +121,27 @@ func NachatOchistkuProektaActivity(ctx context.Context, command NachatOchistkuPr
 		return result, nil
 	}
 
-	_, err = f.Write([]byte("UNITMAN_UNIT_NAME=clearing"))
+	_, err = f.Write([]byte("UNITMAN_UNIT_NAME=clearing\n"))
 	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_UNIT_NAME", "success", err)
 	if err != nil {
 		result.Success = 0
 		return result, nil
 	}
 
-	_, err = f.Write([]byte("UNITMAN_PROJECT_NAME=" + command.ProjectName))
+	_, err = f.Write([]byte("UNITMAN_PROJECT_NAME=" + command.ProjectName + "\n"))
 	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_PROJECT_NAME", "success", err)
+	if err != nil {
+		result.Success = 0
+		return result, nil
+	}
+
+	err = os.Setenv("UNITMAN_PROJECT_NAME", command.ProjectName)
+	if err != nil {
+		result.Success = 0
+		return result, nil
+	}
+
+	err = os.Setenv("UNITMAN_UNIT_NAME", "clearing")
 	if err != nil {
 		result.Success = 0
 		return result, nil

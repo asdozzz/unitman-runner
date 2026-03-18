@@ -33,14 +33,18 @@ func NachatSborkuUnitaActivity(ctx context.Context, command NachatSborkuUnita) (
 		Config:  "",
 	}
 
-	out, err := json.Marshal(command)
+	_, err := json.Marshal(command)
 	result.Steps = model.AddStepToSteps(result.Steps, "json.Marshal", "success", err)
 	if err != nil {
 		result.Success = 0
 		return result, nil
 	}
 
-	fmt.Println("NachatSborkuUnita:" + string(out))
+	err = os.Setenv("UNITMAN_UNIT_NAME", command.Name)
+	if err != nil {
+		result.Success = 0
+		return result, nil
+	}
 
 	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
 	err = os.MkdirAll(filepath, os.ModePerm)

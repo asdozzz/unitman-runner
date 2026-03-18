@@ -3,7 +3,6 @@ package unit
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/google/uuid"
 	"os"
 	"runner/temporal/activity/unit/model"
@@ -40,13 +39,17 @@ func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbros
 		Steps:      []model.Step{},
 	}
 
-	out, err := json.Marshal(command)
+	_, err := json.Marshal(command)
 	if err != nil {
 		result.Success = 0
 		return wrapResultatSbrosaPodgotovki(result), nil
 	}
 
-	fmt.Println("NachatSbrosPodgotovkiUnita:" + string(out))
+	err = os.Setenv("UNITMAN_UNIT_NAME", command.Name)
+	if err != nil {
+		result.Success = 0
+		return wrapResultatSbrosaPodgotovki(result), nil
+	}
 
 	filepath := "./projects/" + command.ProjectId + "/units/" + command.UnitId
 
