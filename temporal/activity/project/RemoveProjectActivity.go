@@ -33,16 +33,16 @@ func RemoveProjectActivity(ctx context.Context, command RemoveProjectCommand) (*
 	}
 
 	fmt.Println("RemoveProjectCommand:" + string(out))
-	filepath := "./projects/" + command.ProjectId
+	filepathDir := "./projects/" + command.ProjectId
 
-	err = os.RemoveAll(filepath)
+	err = os.RemoveAll(filepathDir)
 	if err != nil {
 		fmt.Println(err.Error())
 		result.Success = false
-		result.Steps = append(result.Steps, model.Step{Command: "Remove " + filepath, Response: err.Error(), Success: false, Unixtime: time.Now().Unix()})
+		result.Steps = append(result.Steps, model.Step{Command: "Remove " + filepathDir, Response: err.Error(), Success: false, Unixtime: time.Now().Unix()})
 		return result, nil
 	} else {
-		result.Steps = append(result.Steps, model.Step{Command: "Remove " + filepath, Response: "success", Success: true, Unixtime: time.Now().Unix()})
+		result.Steps = append(result.Steps, model.Step{Command: "Remove " + filepathDir, Response: "success", Success: true, Unixtime: time.Now().Unix()})
 	}
 
 	return result, nil

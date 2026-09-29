@@ -155,7 +155,8 @@ func NachatOchistkuProektaActivity(ctx context.Context, command NachatOchistkuPr
 		return result, nil
 	}
 
-	Commands := []string{"podman system prune -a -f", "podman rmi -f $(podman images --filter=\"until720h\")"}
+	//Commands := []string{"podman system prune -a -f", "podman rmi -f $(podman images -qa --filter until=720h)"}
+	Commands := []string{"podman system prune -a -f"}
 
 	for _, commandString := range Commands {
 		//commandArgs := strings.Split(commandString, " ")
