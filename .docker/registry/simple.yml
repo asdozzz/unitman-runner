@@ -1,0 +1,19 @@
+version: 0.1
+log:
+  level: debug # Оставляем debug, чтобы в логах видеть обращения к Docker Hub
+storage:
+  # КРИТИЧЕСКИ ВАЖНО ДЛЯ v3: Без этого блока прокси не инициализируется!
+  delete:
+    enabled: true
+  cache:
+    blobdescriptor: inmemory
+  filesystem:
+    rootdirectory: /var/lib/registry
+http:
+  addr: :5000
+  headers:
+    X-Content-Type-Options: [nosniff]
+proxy:
+  # Точный URL для Docker Hub в формате v3
+  remoteurl: https://registry-1.docker.io
+  ttl: 168h

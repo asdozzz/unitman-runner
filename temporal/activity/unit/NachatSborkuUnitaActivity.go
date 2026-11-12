@@ -80,7 +80,7 @@ func NachatSborkuUnitaActivity(ctx context.Context, command NachatSborkuUnita) (
 	}
 
 	unitPath := currentPath + "/" + filepath
-	dockerFilesPath := currentPath + "/temporal/activity/unit/docker/."
+	dockerFilesPath := currentPath + "/temporal/activity/unit/docker-dind/."
 	args := []string{"cp", "-R", dockerFilesPath, unitPath}
 	msg, err := utils.ExecCommand(filepath, args)
 	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)

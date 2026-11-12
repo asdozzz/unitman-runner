@@ -1,0 +1,38 @@
+services:
+  unit:
+    container_name: ${UNITMAN_UNIT_NAME}.${UNITMAN_PROJECT_NAME}
+    runtime: sysbox-runc
+    build:
+      context: .
+    mem_limit: ${UNITMAN_MEMORY_LIMIT:-3g}
+    memswap_limit: ${UNITMAN_MEMORY_LIMIT:-3g}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        rm -f /var/run/docker.pid /var/run/docker.sock
+        dockerd \
+          --host=unix:///var/run/docker.sock \
+          --registry-mirror=http://unitman-registry:5000 \
+          --insecure-registry=unitman-registry:5000 \
+          --storage-driver=overlay2 \
+          --max-concurrent-downloads=10 \
+          --max-concurrent-uploads=10 \
+          --mtu=1400 >/var/log/dockerd.log 2>&1 &
+        exec sleep infinity
+    healthcheck:
+      test: [ "CMD-SHELL", "test -S /var/run/docker.sock && docker info >/dev/null 2>&1" ]
+      interval: 0.2s
+      timeout: 1s
+      retries: 25
+      start_period: 0.1s
+    volumes:
+      - unit_docker_data:/var/lib/docker
+
+volumes:
+  unit_docker_data:
+
+networks:
+  default:
+    external: true
+    name: unitman_default

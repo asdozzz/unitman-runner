@@ -1,0 +1,14 @@
+FROM docker:dind
+
+RUN apk add --no-cache openssl
+RUN apk add --no-cache gettext-envsubst
+
+# 1. Создаем обертку для podman -> docker
+RUN echo '#!/bin/sh' > /usr/local/bin/podman && \
+    echo 'exec docker "$@"' >> /usr/local/bin/podman && \
+    chmod +x /usr/local/bin/podman
+
+# 2. Создаем обертку для podman-compose -> docker compose
+RUN echo '#!/bin/sh' > /usr/local/bin/podman-compose && \
+    echo 'exec docker compose "$@"' >> /usr/local/bin/podman-compose && \
+    chmod +x /usr/local/bin/podman-compose

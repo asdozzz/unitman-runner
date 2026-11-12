@@ -3,3 +3,5 @@ projects/
 /logs.txt
 /main
 /config.json
+register_data
+nohup.out

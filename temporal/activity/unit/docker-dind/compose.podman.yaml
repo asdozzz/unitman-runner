@@ -1,0 +1,20 @@
+services:
+  unit:
+    container_name: ${UNITMAN_UNIT_NAME}.${UNITMAN_PROJECT_NAME}
+    user: root
+    privileged: true
+    build:
+      context: .
+    working_dir: /app
+    userns_mode: keep-id
+    mem_limit: ${UNITMAN_MEMORY_LIMIT:-3g}
+    memswap_limit: ${UNITMAN_MEMORY_LIMIT:-3g}
+    volumes:
+      - ./podman-config/registries.conf:/usr/share/containers/registries.conf.d/99-override.conf:ro
+    env_file:
+      - .env
+
+networks:
+  default:
+    external: true
+    name: unitman_default

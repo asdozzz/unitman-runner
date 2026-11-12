@@ -11,6 +11,7 @@ import (
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
 	"strings"
+	"text/template"
 )
 
 type ContainerSettings struct {
@@ -27,6 +28,9 @@ type NachatPodgotovkuUnita struct {
 	Variables         []model.UnitConfigVariable
 	Caches            []Cache
 	ContainerSettings ContainerSettings
+	Branch            string
+	ImageConfig       model.ImageConfigStruct
+	Volumes           []Volume
 }
 
 type ResultatPodgotovkiUnita struct {
@@ -50,6 +54,7 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 
 	out, err := json.Marshal(command)
 	if err != nil {
+		fmt.Println(err)
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil
 	}
@@ -60,6 +65,7 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 
 	currentPath, err := os.Getwd()
 	if err != nil {
+		fmt.Println(err)
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil
 	}
@@ -68,18 +74,49 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 
 	err = os.Setenv("UNITMAN_PROJECT_NAME", command.ProjectName)
 	if err != nil {
+		fmt.Println(err)
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil
 	}
 
 	err = os.Setenv("UNITMAN_UNIT_NAME", command.Name)
 	if err != nil {
+		fmt.Println(err)
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
+	}
+
+	err = os.Setenv("UNITMAN_BRANCH_NAME", command.Branch)
+	if err != nil {
+		fmt.Println(err)
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
+	}
+
+	err = os.Setenv("UNITMAN_UNIT_IMAGE_NAME", command.ImageConfig.Image)
+	if err != nil {
+		fmt.Println(err)
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
+	}
+
+	err = os.Setenv("UNITMAN_CACHE_REPO", "host.units:5000")
+	if err != nil {
+		fmt.Println(err)
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil
 	}
 
 	err = os.Setenv("UNITMAN_MEMORY_LIMIT", command.ContainerSettings.MemoryLimit)
 	if err != nil {
+		fmt.Println(err)
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
+	}
+
+	err = os.Setenv("PODMAN_COMPOSE_IN_POD", "false")
+	if err != nil {
+		fmt.Println(err)
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil
 	}
@@ -92,12 +129,14 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 
 	err = os.Truncate(envFilePath, 0)
 	if err != nil {
+		fmt.Println(err)
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil
 	}
 
 	f, err := os.OpenFile(envFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
+		fmt.Println(err)
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil
 	}
@@ -108,26 +147,44 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		}
 	}(f)
 
-	_, err = f.Write([]byte("PODMAN_IGNORE_CGROUPSV1_WARNING=1\n"))
-	if err != nil {
-		result.Success = 0
-		return wrapResultatPogotovki(result), nil
-	}
-
 	_, err = f.Write([]byte("UNITMAN_UNIT_NAME=" + command.Name + "\n"))
 	if err != nil {
+		fmt.Println(err)
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil
 	}
 
 	_, err = f.Write([]byte("UNITMAN_PROJECT_NAME=" + command.ProjectName + "\n"))
 	if err != nil {
+		fmt.Println(err)
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
+	}
+
+	_, err = f.Write([]byte("UNITMAN_BRANCH_NAME=" + command.Branch + "\n"))
+	if err != nil {
+		fmt.Println(err)
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
+	}
+
+	_, err = f.Write([]byte("UNITMAN_UNIT_IMAGE_NAME=" + command.ImageConfig.Image + "\n"))
+	if err != nil {
+		fmt.Println(err)
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil
 	}
 
 	_, err = f.Write([]byte("COMPOSE_PROJECT_NAME=" + command.Name + "_" + command.ProjectName + "\n"))
 	if err != nil {
+		fmt.Println(err)
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
+	}
+
+	_, err = f.Write([]byte("PODMAN_COMPOSE_IN_POD=false" + "\n"))
+	if err != nil {
+		fmt.Println(err)
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil
 	}
@@ -136,9 +193,54 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		_, err = f.Write([]byte("UNITMAN_" + variableItem.Id + "=" + variableItem.Value + "\n"))
 		result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_"+variableItem.Id, "success", err)
 		if err != nil {
+			fmt.Println(err)
 			result.Success = 0
 			return wrapResultatPogotovki(result), nil
 		}
+	}
+
+	readyTemplate, err := template.ParseFiles(filepath + "/Dockerfile.temp")
+
+	if err != nil {
+		result.Steps = model.AddStepToSteps(result.Steps, "parse Dockerfile template", "fail", err)
+		result.Success = 0
+		return result, nil
+	}
+
+	outputFile, err := os.Create(filepath + "/Dockerfile")
+
+	if err != nil {
+		result.Steps = model.AddStepToSteps(result.Steps, "make Dockerfile", "fail", err)
+		result.Success = 0
+		return result, nil
+	}
+	defer outputFile.Close()
+
+	err = readyTemplate.Execute(outputFile, command.ImageConfig)
+	if err != nil {
+		result.Steps = model.AddStepToSteps(result.Steps, "generate text for Dockerfile", "success", err)
+		result.Success = 0
+		return result, nil
+	}
+
+	composeFile := "compose.dind.yaml"
+	if command.ImageConfig.Image == "asdozzz/unitman-unit:latest" {
+		composeFile = "compose.podman.yaml"
+	}
+
+	err = CopyFileContents(filepath+"/"+composeFile, filepath+"/compose.yaml")
+	if err != nil {
+		result.Steps = model.AddStepToSteps(result.Steps, "make compose.yaml by image name", "success", err)
+		return nil, err
+	}
+
+	// Тома готовятся до сборки образа: Dockerfile копирует ./app в /app,
+	// поэтому распакованные архивы попадают в контейнер вместе с кодом.
+	volumeSteps, errVolumes := PrepareVolumes(filepath, command.Volumes)
+	result.Steps = append(result.Steps, volumeSteps...)
+	if errVolumes != nil {
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
 	}
 
 	args := []string{"docker", "compose", "up", "-d", "--build"}
@@ -151,6 +253,15 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 
 	RestoreCache(command.ProjectName, command.Name, command.ProjectId, command.Id, command.Caches)
 	//RestoreImages(command.ProjectId, command.Id)
+	/*for i := 0; i < 15; i++ {
+		args := []string{"docker", "compose", "exec", "unit", "sh", "-c", "docker info"}
+		_, err = utils.ExecCommand(filepath, args)
+		if err == nil {
+			break
+		} else {
+			time.Sleep(500 * time.Millisecond)
+		}
+	}*/
 
 	for _, commandString := range command.Commands {
 		//commandArgs := strings.Split(commandString, " ")

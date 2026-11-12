@@ -3,6 +3,7 @@ package unit
 import (
 	"crypto/md5"
 	"fmt"
+	"io"
 	"os"
 	"runner/temporal/utils"
 	"strings"
@@ -32,34 +33,6 @@ func makeSha1Sums(cache Cache, unitPath string) (bool, []string) {
 	}
 
 	return isValidKeys, sha1Sums
-}
-
-func RestoreImages(ProjectId string, UnitId string) {
-	currentPath, err := os.Getwd()
-	if err != nil {
-		return
-	}
-
-	projectPath := currentPath + "/projects/" + ProjectId + "/"
-	projectImagesPath := projectPath + "images/"
-
-	unitPath := projectPath + "units/" + UnitId
-
-	args := []string{"docker", "compose", "cp", projectImagesPath + ".", "unit:/podman_images/"}
-	_, errCommand := utils.ExecCommand(unitPath, args)
-
-	if errCommand != nil {
-		fmt.Println("docker copy cache archive to container " + errCommand.Error())
-		return
-	}
-
-	args = []string{"docker", "compose", "exec", "unit", "sh", "-c", "ls -1 /podman_images/*.tar | xargs --no-run-if-empty -L 1 podman load -i"}
-	_, errCommand = utils.ExecCommand(unitPath, args)
-
-	if errCommand != nil {
-		fmt.Println("docker copy load images to container " + errCommand.Error())
-		return
-	}
 }
 
 func RestoreCache(ProjectName string, UnitName string, ProjectId string, UnitId string, caches []Cache) {
@@ -149,40 +122,6 @@ func makeSumFromString(sumFiles string) string {
 	return fmt.Sprintf("%x", h)
 }
 
-func SavePodmanImages(ProjectName string, ProjectId string, UnitId string) {
-	currentPath, err := os.Getwd()
-	if err != nil {
-		return
-	}
-	projectPath := currentPath + "/projects/" + ProjectId + "/"
-	projectImagesPath := projectPath + "images/"
-	err = os.MkdirAll(projectImagesPath, os.ModePerm)
-
-	if err != nil {
-		fmt.Println("error mkdir project cache dir " + projectImagesPath)
-		return
-	}
-
-	unitPath := projectPath + "units/" + UnitId
-
-	args := []string{"docker", "compose", "exec", "unit", "sh", "-c", "./unitman_utils/bi.sh " + ProjectName}
-	_, err = utils.ExecCommand(unitPath, args)
-
-	if err != nil {
-		fmt.Println("error:")
-		fmt.Println(err)
-		return
-	}
-
-	args = []string{"docker", "compose", "cp", "unit:/app/podman_images_backup/.", projectImagesPath}
-	_, errCommand := utils.ExecCommand(unitPath, args)
-
-	if errCommand != nil {
-		fmt.Println("error copy images path - " + projectImagesPath + ":")
-		fmt.Println(errCommand)
-	}
-}
-
 func MakeCache(ProjectName string, UnitName string, ProjectId string, UnitId string, caches []Cache) {
 	err := os.Setenv("UNITMAN_PROJECT_NAME", ProjectName)
 
@@ -214,7 +153,7 @@ func MakeCache(ProjectName string, UnitName string, ProjectId string, UnitId str
 
 	unitPath := projectPath + "units/" + UnitId
 
-	args := []string{"docker", "compose", "exec", "unit", "sh", "-c", "podman-compose ps --format='{{.ID}}###{{.Names}}'"}
+	args := []string{"docker", "compose", "exec", "unit", "sh", "-c", "docker-compose ps --format='{{.ID}}###{{.Names}}'"}
 	resultContainers, errCommand := utils.ExecCommand(unitPath, args)
 
 	if errCommand != nil {
@@ -257,7 +196,7 @@ func MakeCache(ProjectName string, UnitName string, ProjectId string, UnitId str
 			}
 
 			for _, path := range cache.Paths {
-				args := []string{"docker", "compose", "exec", "unit", "sh", "-c", "podman cp " + id + ":" + path + " " + contanerCacheDirFiles + path}
+				args := []string{"docker", "compose", "exec", "unit", "sh", "-c", "docker cp " + id + ":" + path + " " + contanerCacheDirFiles + path}
 				_, errCommand := utils.ExecCommand(unitPath, args)
 
 				if errCommand != nil {
@@ -311,4 +250,27 @@ func MakeCache(ProjectName string, UnitName string, ProjectId string, UnitId str
 		args = []string{"docker", "compose", "exec", "unit", "sh", "-c", "rm -rf " + archiveName}
 		_, errCommand = utils.ExecCommand(unitPath, args)
 	}
+}
+
+func CopyFileContents(src, dst string) (err error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return
+	}
+	defer func() {
+		cerr := out.Close()
+		if err == nil {
+			err = cerr
+		}
+	}()
+	if _, err = io.Copy(out, in); err != nil {
+		return
+	}
+	err = out.Sync()
+	return
 }

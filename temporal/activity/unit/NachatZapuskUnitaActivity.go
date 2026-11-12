@@ -19,6 +19,7 @@ type NachatZapuskUnita struct {
 	Commands    []string
 	Variables   []model.UnitConfigVariable
 	Caches      []Cache
+	Branch      string
 }
 
 type ResultatZapuskaUnita struct {
@@ -57,6 +58,12 @@ func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (
 		return wrapResultatZapuska(result), nil
 	}
 
+	err = os.Setenv("UNITMAN_BRANCH_NAME", command.Branch)
+	if err != nil {
+		result.Success = 0
+		return wrapResultatZapuska(result), nil
+	}
+
 	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
 
 	currentPath, err := os.Getwd()
@@ -66,14 +73,6 @@ func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (
 	}
 
 	filepath = currentPath + "/" + filepath
-
-	args := []string{"docker", "compose", "exec", "unit", "sh", "-c", "podman pod rm pod_" + command.Name + "_" + command.ProjectName + " --force"}
-	msg, errCommand := utils.ExecCommand(filepath, args)
-	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
-	if errCommand != nil {
-		result.Success = 0
-		return wrapResultatZapuska(result), nil
-	}
 
 	for _, commandString := range command.Commands {
 		args := []string{"docker", "compose", "exec", "unit", "sh", "-c", commandString}
@@ -86,7 +85,6 @@ func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (
 	}
 
 	go MakeCache(command.ProjectName, command.Name, command.ProjectId, command.Id, command.Caches)
-	//go SavePodmanImages(command.ProjectName, command.ProjectId, command.Id)
 
 	result.Success = 1
 	return wrapResultatZapuska(result), nil

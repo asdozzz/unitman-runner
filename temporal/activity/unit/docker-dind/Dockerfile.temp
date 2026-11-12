@@ -1,0 +1,8 @@
+FROM {{.Image}}
+{{ range .Commands }}
+RUN {{ . }}
+{{ end }}
+
+WORKDIR /app
+
+COPY ./app /app
