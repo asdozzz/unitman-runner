@@ -49,7 +49,7 @@ func NachatUdalenieUnitaActivity(ctx context.Context, command NachatUdalenieUnit
 
 	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
 
-	args := []string{"docker", "compose", "exec", "unit", "sh", "-c", "pwd"}
+	args := []string{"docker", "compose", "exec", "-T", "unit", "sh", "-c", "pwd"}
 	unixtimeCheckStart := time.Now().Unix()
 	_, err = utils.ExecCommand(filepath, args)
 

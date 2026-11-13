@@ -60,7 +60,7 @@ func NachatObnovlenieUnitaActivity(ctx context.Context, command NachatObnovlenie
 		return result, nil
 	}
 
-	args = []string{"docker", "compose", "exec", "unit", "sh", "-c", "pwd"}
+	args = []string{"docker", "compose", "exec", "-T", "unit", "sh", "-c", "pwd"}
 	_, err = utils.ExecCommand(filepath, args)
 
 	unitIsRunning := true

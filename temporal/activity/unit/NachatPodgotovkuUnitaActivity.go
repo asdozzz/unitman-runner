@@ -270,7 +270,7 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 	RestoreCache(command.ProjectName, command.Name, command.ProjectId, command.Id, command.Caches)
 	//RestoreImages(command.ProjectId, command.Id)
 	/*for i := 0; i < 15; i++ {
-		args := []string{"docker", "compose", "exec", "unit", "sh", "-c", "docker info"}
+		args := []string{"docker", "compose", "exec", "-T", "unit", "sh", "-c", "docker info"}
 		_, err = utils.ExecCommand(filepath, args)
 		if err == nil {
 			break
@@ -281,7 +281,7 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 
 	for _, commandString := range command.Commands {
 		//commandArgs := strings.Split(commandString, " ")
-		args := []string{"docker", "compose", "exec", "unit", "sh", "-c", commandString}
+		args := []string{"docker", "compose", "exec", "-T", "unit", "sh", "-c", commandString}
 		unixtimeStart := time.Now().Unix()
 		msg, errCommand := utils.ExecCommand(filepath, args)
 		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand, unixtimeStart)

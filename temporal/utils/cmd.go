@@ -2,13 +2,96 @@ package utils
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"os/exec"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
 )
+
+// commandTimeout — максимальное время выполнения одной команды.
+const commandTimeout = 30 * time.Minute
+
+// ErrInteractiveInput возвращается, если команда запросила интерактивный ввод.
+var ErrInteractiveInput = errors.New("команда ожидает интерактивного ввода")
+
+// Приглашения, по которым можно распознать ожидание ввода.
+// Все строки должны быть в нижнем регистре: вывод команды тоже приводится к нижнему регистру.
+var interactivePrompts = []string{
+	"password:",
+	"password for",
+	"passphrase:",
+	"passphrase for",
+	"username:",
+	"username for",
+	"login:",
+	"enter password",
+	"enter passphrase",
+	"enter username",
+	"are you sure",
+	"do you want to continue",
+	"[y/n]",
+	"(y/n)",
+	"[yes/no]",
+	"(yes/no)",
+	"continue?",
+	"press any key",
+	"press enter",
+	"hit enter",
+	"type 'yes'",
+	"type yes",
+	"overwrite?",
+	"do you want",
+	"proceed?",
+	"введите пароль",
+	"введите логин",
+	"подтвердите",
+	"требуется ввод",
+}
+
+type promptDetector struct {
+	mu      sync.Mutex
+	tail    []byte
+	match   string
+	onMatch func()
+}
+
+func (d *promptDetector) Write(p []byte) (int, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.tail = append(d.tail, bytes.ToLower(p)...)
+	if len(d.tail) > 8192 {
+		d.tail = d.tail[len(d.tail)-8192:]
+	}
+
+	if d.match == "" {
+		for _, prompt := range interactivePrompts {
+			if bytes.Contains(d.tail, []byte(prompt)) {
+				d.match = prompt
+				if d.onMatch != nil {
+					d.onMatch()
+				}
+				break
+			}
+		}
+	}
+
+	return len(p), nil
+}
+
+func (d *promptDetector) Match() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	return d.match
+}
 
 func ExecCommandOld(workingDirectory string, app []string) (string, error) {
 	x := app[0]
@@ -25,25 +108,73 @@ func ExecCommandOld(workingDirectory string, app []string) (string, error) {
 }
 
 func ExecCommand(workingDirectory string, app []string) (string, error) {
-	x := app[0]
-	_, app = app[0], app[1:]
-	cmd := exec.Command(x, app...)
+	return ExecCommandWithTimeout(workingDirectory, app, commandTimeout)
+}
+
+func ExecCommandWithTimeout(workingDirectory string, app []string, timeout time.Duration) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := exec.Command(app[0], app[1:]...)
 	cmd.Dir = workingDirectory
+	// Ввод не поддерживаем: дочерний процесс читает из /dev/null и сразу получает EOF.
+	cmd.Stdin = nil
+	// Отдельная группа процессов, чтобы по таймауту завершить команду вместе с дочерними процессами.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	detector := &promptDetector{onMatch: cancel}
 
 	var stdoutBuf, stderrBuf bytes.Buffer
-	cmd.Stdout = io.MultiWriter(os.Stdout, &stdoutBuf)
-	cmd.Stderr = io.MultiWriter(os.Stderr, &stderrBuf)
+	cmd.Stdout = io.MultiWriter(os.Stdout, &stdoutBuf, detector)
+	cmd.Stderr = io.MultiWriter(os.Stderr, &stderrBuf, detector)
 
-	err := cmd.Run()
-
-	outStr, errStr := string(stdoutBuf.Bytes()), string(stderrBuf.Bytes())
-	if err != nil {
-		log.Printf("cmd.Run() failed with %s\n - out: %s, err: %s", err, outStr, errStr)
-		return "", errors.New(fmt.Sprintf("%s%s", outStr, errStr))
-		//return "", errors.New("cmd.Run() failed with %s\n" + err.Error())
+	if err := cmd.Start(); err != nil {
+		return "", err
 	}
 
-	return fmt.Sprintf("%s%s", outStr, errStr), nil
+	waitErr := make(chan error, 1)
+	go func() {
+		waitErr <- cmd.Wait()
+	}()
+
+	var runErr error
+	select {
+	case runErr = <-waitErr:
+	case <-ctx.Done():
+		select {
+		case runErr = <-waitErr:
+			// Команда успела завершиться сама.
+		default:
+			// Завершаем всю группу процессов: одного docker-клиента недостаточно.
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			runErr = <-waitErr
+		}
+	}
+
+	outStr := stdoutBuf.String() + stderrBuf.String()
+	command := strings.Join(app, " ")
+
+	if prompt := detector.Match(); prompt != "" {
+		return outStr, fmt.Errorf("%w: обнаружено приглашение %q, команда: %s", ErrInteractiveInput, prompt, command)
+	}
+
+	if ctx.Err() == context.DeadlineExceeded {
+		return outStr, fmt.Errorf("команда не завершилась за %s (возможно, ожидает ввода): %s", timeout, command)
+	}
+
+	if ctx.Err() == context.Canceled {
+		return outStr, fmt.Errorf("выполнение команды прервано (возможно, ожидает ввода): %s", command)
+	}
+
+	if runErr != nil {
+		log.Printf("cmd.Run() failed with %s\n - out: %s", runErr, outStr)
+		if strings.TrimSpace(outStr) == "" {
+			return "", runErr
+		}
+		return "", errors.New(outStr)
+	}
+
+	return outStr, nil
 }
 
 func copyAndCapture(w io.Writer, r io.Reader) ([]byte, error) {
