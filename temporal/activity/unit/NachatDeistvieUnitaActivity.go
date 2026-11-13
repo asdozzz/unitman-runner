@@ -3,7 +3,7 @@ package unit
 import (
 	"context"
 	"encoding/json"
-	"github.com/google/uuid"
+	"go.temporal.io/sdk/activity"
 	"os"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
@@ -25,8 +25,17 @@ type ResultatDeistviyaUnita struct {
 	ResponseId string
 }
 
+func wrapDeistvieSaveStepToMono(result *ResultatDeistviyaUnita) {
+	SaveStepsToMono(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps, Finished: false})
+}
+
 func wrapResultatDeistvie(result *ResultatDeistviyaUnita) *ResultatDeistviyaUnita {
-	SaveUnitSteps(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps})
+	SaveUnitSteps(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps, Finished: false})
+	return result
+}
+
+func wrapResultatDeistvieSuccess(result *ResultatDeistviyaUnita) *ResultatDeistviyaUnita {
+	SaveUnitSteps(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps, Finished: true})
 	return result
 }
 
@@ -34,7 +43,7 @@ func NachatDeistvieUnitaActivity(ctx context.Context, command NachatZapuskUnita)
 	result := &ResultatDeistviyaUnita{
 		Success:    1,
 		Steps:      []model.Step{},
-		ResponseId: uuid.New().String(),
+		ResponseId: activity.GetInfo(ctx).WorkflowExecution.ID,
 	}
 
 	_, err := json.Marshal(command)
@@ -64,9 +73,11 @@ func NachatDeistvieUnitaActivity(ctx context.Context, command NachatZapuskUnita)
 		if errCommand != nil {
 			result.Success = 0
 			return wrapResultatDeistvie(result), nil
+		} else {
+			wrapDeistvieSaveStepToMono(result)
 		}
 	}
 
 	result.Success = 1
-	return wrapResultatDeistvie(result), nil
+	return wrapResultatDeistvieSuccess(result), nil
 }

@@ -3,7 +3,7 @@ package unit
 import (
 	"context"
 	"encoding/json"
-	"github.com/google/uuid"
+	"go.temporal.io/sdk/activity"
 	"os"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
@@ -28,8 +28,17 @@ type ResultatZapuskaUnita struct {
 	ResponseId string
 }
 
+func wrapZapuskaToMono(result *ResultatZapuskaUnita) {
+	SaveStepsToMono(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps, Finished: false})
+}
+
 func wrapResultatZapuska(result *ResultatZapuskaUnita) *ResultatZapuskaUnita {
-	SaveUnitSteps(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps})
+	SaveUnitSteps(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps, Finished: false})
+	return result
+}
+
+func wrapResultatZapuskaSuccess(result *ResultatZapuskaUnita) *ResultatZapuskaUnita {
+	SaveUnitSteps(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps, Finished: true})
 	return result
 }
 
@@ -37,7 +46,7 @@ func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (
 	result := &ResultatZapuskaUnita{
 		Success:    1,
 		Steps:      []model.Step{},
-		ResponseId: uuid.New().String(),
+		ResponseId: activity.GetInfo(ctx).WorkflowExecution.ID,
 	}
 
 	_, err := json.Marshal(command)
@@ -81,11 +90,13 @@ func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (
 		if errCommand != nil {
 			result.Success = 0
 			return wrapResultatZapuska(result), nil
+		} else {
+			wrapZapuskaToMono(result)
 		}
 	}
 
 	go MakeCache(command.ProjectName, command.Name, command.ProjectId, command.Id, command.Caches)
 
 	result.Success = 1
-	return wrapResultatZapuska(result), nil
+	return wrapResultatZapuskaSuccess(result), nil
 }

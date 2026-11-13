@@ -3,7 +3,7 @@ package unit
 import (
 	"context"
 	"encoding/json"
-	"github.com/google/uuid"
+	"go.temporal.io/sdk/activity"
 	"os"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
@@ -26,8 +26,17 @@ type ResultatOstanovkiUnita struct {
 	ResponseId string
 }
 
+func wrapOstanovkaSaveStepToMono(result *ResultatOstanovkiUnita) {
+	SaveStepsToMono(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps, Finished: false})
+}
+
 func wrapResultatOstanovki(result *ResultatOstanovkiUnita) *ResultatOstanovkiUnita {
-	SaveUnitSteps(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps})
+	SaveUnitSteps(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps, Finished: false})
+	return result
+}
+
+func wrapResultatOstanovkiSuccess(result *ResultatOstanovkiUnita) *ResultatOstanovkiUnita {
+	SaveUnitSteps(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps, Finished: true})
 	return result
 }
 
@@ -35,7 +44,7 @@ func NachatOstanokuUnitaActivity(ctx context.Context, command NachatOstanovkuUni
 	result := &ResultatOstanovkiUnita{
 		Success:    1,
 		Steps:      []model.Step{},
-		ResponseId: uuid.New().String(),
+		ResponseId: activity.GetInfo(ctx).WorkflowExecution.ID,
 	}
 
 	_, err := json.Marshal(command)
@@ -73,9 +82,11 @@ func NachatOstanokuUnitaActivity(ctx context.Context, command NachatOstanovkuUni
 		if errCommand != nil {
 			result.Success = 0
 			return wrapResultatOstanovki(result), nil
+		} else {
+			wrapOstanovkaSaveStepToMono(result)
 		}
 	}
 
 	result.Success = 1
-	return wrapResultatOstanovki(result), nil
+	return wrapResultatOstanovkiSuccess(result), nil
 }

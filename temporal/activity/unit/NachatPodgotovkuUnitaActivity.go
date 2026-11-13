@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
+	"go.temporal.io/sdk/activity"
 	"log"
 	"os"
 	"runner/temporal/activity/unit/model"
@@ -40,8 +40,17 @@ type ResultatPodgotovkiUnita struct {
 	ResponseId string
 }
 
+func wrapPodgotovkaSaveStepsToMono(result *ResultatPodgotovkiUnita) {
+	SaveStepsToMono(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps, Finished: false})
+}
+
 func wrapResultatPogotovki(result *ResultatPodgotovkiUnita) *ResultatPodgotovkiUnita {
-	SaveUnitSteps(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps})
+	SaveUnitSteps(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps, Finished: false})
+	return result
+}
+
+func wrapResultatPogotovkiSuccess(result *ResultatPodgotovkiUnita) *ResultatPodgotovkiUnita {
+	SaveUnitSteps(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps, Finished: true})
 	return result
 }
 
@@ -49,7 +58,7 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 	result := &ResultatPodgotovkiUnita{
 		Success:    1,
 		Steps:      []model.Step{},
-		ResponseId: uuid.New().String(),
+		ResponseId: activity.GetInfo(ctx).WorkflowExecution.ID,
 	}
 
 	out, err := json.Marshal(command)
@@ -271,8 +280,10 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		if errCommand != nil {
 			result.Success = 0
 			return wrapResultatPogotovki(result), nil
+		} else {
+			wrapPodgotovkaSaveStepsToMono(result)
 		}
 	}
 
-	return wrapResultatPogotovki(result), nil
+	return wrapResultatPogotovkiSuccess(result), nil
 }

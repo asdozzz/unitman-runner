@@ -15,18 +15,20 @@ import (
 type SaveStepsCommand struct {
 	ResponseId string        `json:"responseId"`
 	Steps      *[]model.Step `json:"stepsContent"`
+	Finished   bool
 }
 
 type SaveStepsRequest struct {
 	ResponseId   string `json:"responseId"`
 	StepsContent string `json:"stepsContent"`
+	Finished     bool   `json:"finished"`
 }
 
 type SaveStepsResponse struct {
 	Id string `json:"id"`
 }
 
-func SaveUnitSteps(command SaveStepsCommand) {
+func SaveStepsToMono(command SaveStepsCommand) {
 	configuration, err := config.ParseConfig()
 
 	if err != nil {
@@ -40,8 +42,10 @@ func SaveUnitSteps(command SaveStepsCommand) {
 		fmt.Println("----------------------", err)
 		return
 	}
+	steps := *command.Steps
+	lastStep := steps[len(steps)-1]
 
-	request := SaveStepsRequest{ResponseId: command.ResponseId, StepsContent: string(marshalled)}
+	request := SaveStepsRequest{ResponseId: command.ResponseId, StepsContent: string(marshalled), Finished: !lastStep.Success || command.Finished}
 
 	requestMarshalled, err := json.Marshal(request)
 
@@ -73,7 +77,10 @@ func SaveUnitSteps(command SaveStepsCommand) {
 		return
 	}
 
-	*command.Steps = []model.Step{}
+}
 
+func SaveUnitSteps(command SaveStepsCommand) {
+	SaveStepsToMono(command)
+	*command.Steps = []model.Step{}
 	return
 }

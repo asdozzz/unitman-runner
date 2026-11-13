@@ -3,7 +3,7 @@ package unit
 import (
 	"context"
 	"encoding/json"
-	"github.com/google/uuid"
+	"go.temporal.io/sdk/activity"
 	"os"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
@@ -26,14 +26,23 @@ type ResultatSbrosaPodgotovkiUnita struct {
 	Steps      []model.Step
 }
 
+func wrapSbrosPodgotovkiSaveStepToMono(result *ResultatSbrosaPodgotovkiUnita) {
+	SaveStepsToMono(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps, Finished: false})
+}
+
 func wrapResultatSbrosaPodgotovki(result *ResultatSbrosaPodgotovkiUnita) *ResultatSbrosaPodgotovkiUnita {
-	SaveUnitSteps(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps})
+	SaveUnitSteps(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps, Finished: false})
+	return result
+}
+
+func wrapResultatSbrosaPodgotovkiSuccess(result *ResultatSbrosaPodgotovkiUnita) *ResultatSbrosaPodgotovkiUnita {
+	SaveUnitSteps(SaveStepsCommand{ResponseId: result.ResponseId, Steps: &result.Steps, Finished: true})
 	return result
 }
 
 func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbrosPodgotovkiUnita) (*ResultatSbrosaPodgotovkiUnita, error) {
 	result := &ResultatSbrosaPodgotovkiUnita{
-		ResponseId: uuid.New().String(),
+		ResponseId: activity.GetInfo(ctx).WorkflowExecution.ID,
 		UnitId:     command.UnitId,
 		Success:    1,
 		Steps:      []model.Step{},
@@ -84,6 +93,8 @@ func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbros
 			if errCommand != nil {
 				result.Success = 0
 				return wrapResultatSbrosaPodgotovki(result), nil
+			} else {
+				wrapSbrosPodgotovkiSaveStepToMono(result)
 			}
 		}
 
@@ -98,5 +109,5 @@ func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbros
 		result.Steps = model.AddStepToSteps(result.Steps, "check unit", "unit is not running", err)
 	}
 
-	return wrapResultatSbrosaPodgotovki(result), nil
+	return wrapResultatSbrosaPodgotovkiSuccess(result), nil
 }
