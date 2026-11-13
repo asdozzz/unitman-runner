@@ -8,6 +8,7 @@ import (
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
 	"strings"
+	"time"
 )
 
 type NachatOstanovkuUnita struct {
@@ -76,9 +77,10 @@ func NachatOstanokuUnitaActivity(ctx context.Context, command NachatOstanovkuUni
 	filepath = currentPath + "/" + filepath
 
 	for _, commandString := range command.Commands {
+		unixtimeStart := time.Now().Unix()
 		args := []string{"docker", "compose", "exec", "unit", "sh", "-c", commandString}
 		msg, errCommand := utils.ExecCommand(filepath, args)
-		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
+		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand, unixtimeStart)
 		if errCommand != nil {
 			result.Success = 0
 			return wrapResultatOstanovki(result), nil

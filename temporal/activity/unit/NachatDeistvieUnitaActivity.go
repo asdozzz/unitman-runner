@@ -8,6 +8,7 @@ import (
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
 	"strings"
+	"time"
 )
 
 type NachatDeistvieUnita struct {
@@ -63,13 +64,14 @@ func NachatDeistvieUnitaActivity(ctx context.Context, command NachatZapuskUnita)
 	filepath = currentPath + "/" + filepath
 
 	for _, commandString := range command.Commands {
+		unixtimeStart := time.Now().Unix()
 		commandStringAfteReplace := commandString
 		for _, variableItem := range command.Variables {
 			commandStringAfteReplace = strings.Replace(commandStringAfteReplace, "${UNITMAN_ACTION_"+variableItem.Id+"}", variableItem.Value, 1)
 		}
 		args := []string{"docker", "compose", "exec", "unit", "sh", "-c", commandStringAfteReplace}
 		msg, errCommand := utils.ExecCommand(filepath, args)
-		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
+		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand, unixtimeStart)
 		if errCommand != nil {
 			result.Success = 0
 			return wrapResultatDeistvie(result), nil

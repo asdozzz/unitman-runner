@@ -8,6 +8,7 @@ import (
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
 	"strings"
+	"time"
 )
 
 type NachatUdalenieUnita struct {
@@ -28,15 +29,17 @@ func NachatUdalenieUnitaActivity(ctx context.Context, command NachatUdalenieUnit
 		Steps:   []model.Step{},
 	}
 
+	unixtimeStart := time.Now().Unix()
 	out, err := json.Marshal(command)
-	result.Steps = model.AddStepToSteps(result.Steps, "json.Marshal", "success", err)
+	result.Steps = model.AddStepToSteps(result.Steps, "json.Marshal", "success", err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil
 	}
 
+	unixtimeStart = time.Now().Unix()
 	err = os.Setenv("UNITMAN_UNIT_NAME", command.Name)
-	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_UNIT_NAME", "success", err)
+	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_UNIT_NAME", "success", err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil
@@ -47,6 +50,7 @@ func NachatUdalenieUnitaActivity(ctx context.Context, command NachatUdalenieUnit
 	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
 
 	args := []string{"docker", "compose", "exec", "unit", "sh", "-c", "pwd"}
+	unixtimeCheckStart := time.Now().Unix()
 	_, err = utils.ExecCommand(filepath, args)
 
 	unitIsRunning := true
@@ -58,21 +62,23 @@ func NachatUdalenieUnitaActivity(ctx context.Context, command NachatUdalenieUnit
 		if strings.Contains(err.Error(), "is not running") {
 			unitIsRunning = false
 		}
-		result.Steps = model.AddStepToSteps(result.Steps, "check unit", "is not running", nil)
+		result.Steps = model.AddStepToSteps(result.Steps, "check unit", "is not running", nil, unixtimeCheckStart)
 	}
 
 	if unitIsRunning {
 		args = []string{"docker", "compose", "down", "-v"}
+		unixtimeStart = time.Now().Unix()
 		msg, err := utils.ExecCommand(filepath, args)
-		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
+		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
 		if err != nil {
 			result.Success = 0
 			return result, nil
 		}
 	}
 
+	unixtimeStart = time.Now().Unix()
 	err = os.RemoveAll(filepath)
-	result.Steps = model.AddStepToSteps(result.Steps, "remove unit directory", "success", err)
+	result.Steps = model.AddStepToSteps(result.Steps, "remove unit directory", "success", err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil

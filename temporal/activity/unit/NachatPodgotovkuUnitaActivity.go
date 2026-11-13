@@ -12,6 +12,7 @@ import (
 	"runner/temporal/utils"
 	"strings"
 	"text/template"
+	"time"
 )
 
 type ContainerSettings struct {
@@ -199,8 +200,9 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 	}
 
 	for _, variableItem := range command.Variables {
+		unixtimeStart := time.Now().Unix()
 		_, err = f.Write([]byte("UNITMAN_" + variableItem.Id + "=" + variableItem.Value + "\n"))
-		result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_"+variableItem.Id, "success", err)
+		result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_"+variableItem.Id, "success", err, unixtimeStart)
 		if err != nil {
 			fmt.Println(err)
 			result.Success = 0
@@ -208,26 +210,29 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		}
 	}
 
+	unixtimeStart := time.Now().Unix()
 	readyTemplate, err := template.ParseFiles(filepath + "/Dockerfile.temp")
 
 	if err != nil {
-		result.Steps = model.AddStepToSteps(result.Steps, "parse Dockerfile template", "fail", err)
+		result.Steps = model.AddStepToSteps(result.Steps, "parse Dockerfile template", "fail", err, unixtimeStart)
 		result.Success = 0
 		return result, nil
 	}
 
+	unixtimeStart = time.Now().Unix()
 	outputFile, err := os.Create(filepath + "/Dockerfile")
 
 	if err != nil {
-		result.Steps = model.AddStepToSteps(result.Steps, "make Dockerfile", "fail", err)
+		result.Steps = model.AddStepToSteps(result.Steps, "make Dockerfile", "fail", err, unixtimeStart)
 		result.Success = 0
 		return result, nil
 	}
 	defer outputFile.Close()
 
+	unixtimeStart = time.Now().Unix()
 	err = readyTemplate.Execute(outputFile, command.ImageConfig)
 	if err != nil {
-		result.Steps = model.AddStepToSteps(result.Steps, "generate text for Dockerfile", "success", err)
+		result.Steps = model.AddStepToSteps(result.Steps, "generate text for Dockerfile", "success", err, unixtimeStart)
 		result.Success = 0
 		return result, nil
 	}
@@ -237,9 +242,10 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		composeFile = "compose.podman.yaml"
 	}
 
+	unixtimeStart = time.Now().Unix()
 	err = CopyFileContents(filepath+"/"+composeFile, filepath+"/compose.yaml")
 	if err != nil {
-		result.Steps = model.AddStepToSteps(result.Steps, "make compose.yaml by image name", "success", err)
+		result.Steps = model.AddStepToSteps(result.Steps, "make compose.yaml by image name", "success", err, unixtimeStart)
 		return nil, err
 	}
 
@@ -253,8 +259,9 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 	}
 
 	args := []string{"docker", "compose", "up", "-d", "--build"}
+	unixtimeStart = time.Now().Unix()
 	msg, err := utils.ExecCommand(filepath, args)
-	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
+	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil
@@ -275,8 +282,9 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 	for _, commandString := range command.Commands {
 		//commandArgs := strings.Split(commandString, " ")
 		args := []string{"docker", "compose", "exec", "unit", "sh", "-c", commandString}
+		unixtimeStart := time.Now().Unix()
 		msg, errCommand := utils.ExecCommand(filepath, args)
-		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
+		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand, unixtimeStart)
 		if errCommand != nil {
 			result.Success = 0
 			return wrapResultatPogotovki(result), nil

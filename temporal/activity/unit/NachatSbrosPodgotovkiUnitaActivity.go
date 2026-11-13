@@ -8,6 +8,7 @@ import (
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
 	"strings"
+	"time"
 )
 
 type NachatSbrosPodgotovkiUnita struct {
@@ -71,6 +72,7 @@ func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbros
 	filepath = currentPath + "/" + filepath
 
 	args := []string{"docker", "compose", "exec", "unit", "sh", "-c", "pwd"}
+	unixtimeCheckStart := time.Now().Unix()
 	_, err = utils.ExecCommand(filepath, args)
 
 	unitIsRunning := true
@@ -82,14 +84,15 @@ func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbros
 		if strings.Contains(err.Error(), "is not running") {
 			unitIsRunning = false
 		}
-		result.Steps = model.AddStepToSteps(result.Steps, "check unit", "is not running", nil)
+		result.Steps = model.AddStepToSteps(result.Steps, "check unit", "is not running", nil, unixtimeCheckStart)
 	}
 
 	if unitIsRunning == true {
 		for _, commandString := range command.Commands {
+			unixtimeStart := time.Now().Unix()
 			args := []string{"docker", "compose", "exec", "unit", "sh", "-c", commandString}
 			msg, errCommand := utils.ExecCommand(filepath, args)
-			result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand)
+			result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand, unixtimeStart)
 			if errCommand != nil {
 				result.Success = 0
 				return wrapResultatSbrosaPodgotovki(result), nil
@@ -99,14 +102,15 @@ func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbros
 		}
 
 		args := []string{"docker", "compose", "down", "-v"}
+		unixtimeDownStart := time.Now().Unix()
 		msg, err := utils.ExecCommand(filepath, args)
-		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
+		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeDownStart)
 		if err != nil {
 			result.Success = 0
 			return wrapResultatSbrosaPodgotovki(result), nil
 		}
 	} else {
-		result.Steps = model.AddStepToSteps(result.Steps, "check unit", "unit is not running", err)
+		result.Steps = model.AddStepToSteps(result.Steps, "check unit", "unit is not running", err, unixtimeCheckStart)
 	}
 
 	return wrapResultatSbrosaPodgotovkiSuccess(result), nil

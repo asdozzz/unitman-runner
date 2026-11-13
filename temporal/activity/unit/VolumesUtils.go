@@ -50,24 +50,27 @@ func PrepareVolumes(unitPath string, volumes []Volume) ([]model.Step, error) {
 
 	volumesRootPath := filepath.Join(unitPath, unitmanUnitAppDirName, unitmanVolumesDirName)
 
+	unixtimeStart := time.Now().Unix()
 	err := os.MkdirAll(volumesRootPath, os.ModePerm)
-	steps = model.AddStepToSteps(steps, "mkdir "+volumesRootPath, volumesRootPath, err)
+	steps = model.AddStepToSteps(steps, "mkdir "+volumesRootPath, volumesRootPath, err, unixtimeStart)
 	if err != nil {
 		return steps, fmt.Errorf("не удалось создать каталог томов %s: %w", volumesRootPath, err)
 	}
 
 	for _, volume := range volumes {
+		unixtimeStart = time.Now().Unix()
 		volumePath, errPath := makeVolumePath(volumesRootPath, volume.Dir)
 		if errPath != nil {
-			steps = model.AddStepToSteps(steps, "volume dir "+volume.Dir, "", errPath)
+			steps = model.AddStepToSteps(steps, "volume dir "+volume.Dir, "", errPath, unixtimeStart)
 			return steps, errPath
 		}
 
 		downloadUrl := volume.downloadUrl()
 
 		if downloadUrl == "" {
+			unixtimeStart = time.Now().Unix()
 			err = os.MkdirAll(volumePath, os.ModePerm)
-			steps = model.AddStepToSteps(steps, "mkdir "+volumePath, "файл к тому не прикреплён", err)
+			steps = model.AddStepToSteps(steps, "mkdir "+volumePath, "файл к тому не прикреплён", err, unixtimeStart)
 			if err != nil {
 				return steps, fmt.Errorf("не удалось создать каталог тома %s: %w", volumePath, err)
 			}
@@ -76,32 +79,36 @@ func PrepareVolumes(unitPath string, volumes []Volume) ([]model.Step, error) {
 		}
 
 		// Том пересобирается с нуля, чтобы в каталоге не оставались файлы прошлой подготовки.
+		unixtimeStart = time.Now().Unix()
 		err = os.RemoveAll(volumePath)
 		if err != nil {
-			steps = model.AddStepToSteps(steps, "clean "+volumePath, "", err)
+			steps = model.AddStepToSteps(steps, "clean "+volumePath, "", err, unixtimeStart)
 			return steps, fmt.Errorf("не удалось очистить каталог тома %s: %w", volumePath, err)
 		}
 
+		unixtimeStart = time.Now().Unix()
 		err = os.MkdirAll(volumePath, os.ModePerm)
-		steps = model.AddStepToSteps(steps, "mkdir "+volumePath, volumePath, err)
+		steps = model.AddStepToSteps(steps, "mkdir "+volumePath, volumePath, err, unixtimeStart)
 		if err != nil {
 			return steps, fmt.Errorf("не удалось создать каталог тома %s: %w", volumePath, err)
 		}
 
+		unixtimeStart = time.Now().Unix()
 		archivePath, cleanupArchive, errDownload := downloadVolumeArchive(downloadUrl, volume.archiveName())
 		if errDownload != nil {
-			steps = model.AddStepToSteps(steps, "download volume "+volume.Name+" from "+downloadUrl, "", errDownload)
+			steps = model.AddStepToSteps(steps, "download volume "+volume.Name+" from "+downloadUrl, "", errDownload, unixtimeStart)
 			return steps, errDownload
 		}
 
 		archiveName := filepath.Base(archivePath)
 
-		steps = model.AddStepToSteps(steps, "download volume "+volume.Name+" from "+downloadUrl, archiveName, nil)
+		steps = model.AddStepToSteps(steps, "download volume "+volume.Name+" from "+downloadUrl, archiveName, nil, unixtimeStart)
 
+		unixtimeStart = time.Now().Unix()
 		errUnzip := unzipVolumeArchive(archivePath, volumePath)
 		cleanupArchive()
 
-		steps = model.AddStepToSteps(steps, "unzip "+archiveName+" to "+volumePath, "распакован", errUnzip)
+		steps = model.AddStepToSteps(steps, "unzip "+archiveName+" to "+volumePath, "распакован", errUnzip, unixtimeStart)
 		if errUnzip != nil {
 			return steps, errUnzip
 		}

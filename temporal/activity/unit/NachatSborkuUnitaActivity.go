@@ -10,6 +10,7 @@ import (
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
 	"strings"
+	"time"
 )
 
 type NachatSborkuUnita struct {
@@ -33,8 +34,9 @@ func NachatSborkuUnitaActivity(ctx context.Context, command NachatSborkuUnita) (
 		Config:  "",
 	}
 
+	unixtimeStart := time.Now().Unix()
 	_, err := json.Marshal(command)
-	result.Steps = model.AddStepToSteps(result.Steps, "json.Marshal", "success", err)
+	result.Steps = model.AddStepToSteps(result.Steps, "json.Marshal", "success", err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil
@@ -47,15 +49,17 @@ func NachatSborkuUnitaActivity(ctx context.Context, command NachatSborkuUnita) (
 	}
 
 	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
+	unixtimeStart = time.Now().Unix()
 	err = os.MkdirAll(filepath, os.ModePerm)
-	result.Steps = model.AddStepToSteps(result.Steps, "MkdirAll", "success", err)
+	result.Steps = model.AddStepToSteps(result.Steps, "MkdirAll", "success", err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil
 	}
 
+	unixtimeStart = time.Now().Unix()
 	dir, err := ioutil.ReadDir(filepath)
-	result.Steps = model.AddStepToSteps(result.Steps, "ReadDir", "success", err)
+	result.Steps = model.AddStepToSteps(result.Steps, "ReadDir", "success", err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil
@@ -64,16 +68,18 @@ func NachatSborkuUnitaActivity(ctx context.Context, command NachatSborkuUnita) (
 	for _, d := range dir {
 		item := path.Join([]string{filepath, d.Name()}...)
 		fmt.Println("item:" + item)
+		unixtimeStart = time.Now().Unix()
 		err = os.RemoveAll(item)
 		if err != nil {
-			result.Steps = model.AddStepToSteps(result.Steps, "remove child item "+item, "success", err)
+			result.Steps = model.AddStepToSteps(result.Steps, "remove child item "+item, "success", err, unixtimeStart)
 			result.Success = 0
 			return result, nil
 		}
 	}
 
+	unixtimeStart = time.Now().Unix()
 	currentPath, err := os.Getwd()
-	result.Steps = model.AddStepToSteps(result.Steps, "Getwd", "success", err)
+	result.Steps = model.AddStepToSteps(result.Steps, "Getwd", "success", err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil
@@ -82,8 +88,9 @@ func NachatSborkuUnitaActivity(ctx context.Context, command NachatSborkuUnita) (
 	unitPath := currentPath + "/" + filepath
 	dockerFilesPath := currentPath + "/temporal/activity/unit/docker-dind/."
 	args := []string{"cp", "-R", dockerFilesPath, unitPath}
+	unixtimeStart = time.Now().Unix()
 	msg, err := utils.ExecCommand(filepath, args)
-	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
+	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil
@@ -92,40 +99,45 @@ func NachatSborkuUnitaActivity(ctx context.Context, command NachatSborkuUnita) (
 	appPath := currentPath + "/" + filepath + "/app"
 	mainBranchPath := currentPath + "/projects/" + command.ProjectId + "/mainBranch/."
 	args = []string{"cp", "-R", mainBranchPath, appPath}
+	unixtimeStart = time.Now().Unix()
 	msg, err = utils.ExecCommand(filepath, args)
-	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
+	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil
 	}
 
 	args = []string{"git", "reset", "--hard"}
+	unixtimeStart = time.Now().Unix()
 	msg, err = utils.ExecCommand(appPath, args)
-	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
+	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil
 	}
 
 	args = []string{"git", "remote", "set-url", "origin", command.StorageUrl}
+	unixtimeStart = time.Now().Unix()
 	msg, err = utils.ExecCommand(appPath, args)
-	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
+	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil
 	}
 
 	args = []string{"git", "fetch", "--all"}
+	unixtimeStart = time.Now().Unix()
 	msg, err = utils.ExecCommand(appPath, args)
-	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
+	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil
 	}
 
 	args = []string{"git", "checkout", "-B", command.Branch, "origin/" + command.Branch}
+	unixtimeStart = time.Now().Unix()
 	msg, err = utils.ExecCommand(appPath, args)
-	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
+	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil

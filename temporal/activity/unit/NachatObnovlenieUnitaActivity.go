@@ -8,6 +8,7 @@ import (
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
 	"strings"
+	"time"
 )
 
 type NachatObnovlenieUnita struct {
@@ -28,8 +29,9 @@ func NachatObnovlenieUnitaActivity(ctx context.Context, command NachatObnovlenie
 		Steps:   []model.Step{},
 	}
 
+	unixtimeStart := time.Now().Unix()
 	out, err := json.Marshal(command)
-	result.Steps = model.AddStepToSteps(result.Steps, "json.Marshal", "success", err)
+	result.Steps = model.AddStepToSteps(result.Steps, "json.Marshal", "success", err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil
@@ -39,8 +41,9 @@ func NachatObnovlenieUnitaActivity(ctx context.Context, command NachatObnovlenie
 
 	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
 
+	unixtimeStart = time.Now().Unix()
 	currentPath, err := os.Getwd()
-	result.Steps = model.AddStepToSteps(result.Steps, "Getwd", "success", err)
+	result.Steps = model.AddStepToSteps(result.Steps, "Getwd", "success", err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil
@@ -49,8 +52,9 @@ func NachatObnovlenieUnitaActivity(ctx context.Context, command NachatObnovlenie
 	filepathApp := currentPath + "/" + filepath + "/app"
 
 	args := []string{"git", "pull"}
+	unixtimeStart = time.Now().Unix()
 	msg, err := utils.ExecCommand(filepathApp, args)
-	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
+	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil
@@ -72,8 +76,9 @@ func NachatObnovlenieUnitaActivity(ctx context.Context, command NachatObnovlenie
 
 	if unitIsRunning {
 		args = []string{"docker", "compose", "cp", "-a", filepathApp, "unit:/"}
+		unixtimeStart = time.Now().Unix()
 		msg, err := utils.ExecCommand(filepath, args)
-		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err)
+		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
 		if err != nil {
 			result.Success = 0
 			return result, nil
