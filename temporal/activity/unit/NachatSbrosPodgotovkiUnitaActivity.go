@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"runner/state"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
 	"strings"
@@ -13,12 +14,13 @@ import (
 )
 
 type NachatSbrosPodgotovkiUnita struct {
-	UnitId     string
-	ProjectId  string
-	Name       string
-	StorageUrl string
-	Commands   []string
-	Variables  []model.UnitConfigVariable
+	UnitId      string
+	ProjectId   string
+	ProjectName string
+	Name        string
+	StorageUrl  string
+	Commands    []string
+	Variables   []model.UnitConfigVariable
 }
 
 type ResultatSbrosaPodgotovkiUnita struct {
@@ -42,15 +44,23 @@ func wrapResultatSbrosaPodgotovkiSuccess(result *ResultatSbrosaPodgotovkiUnita) 
 	return result
 }
 
-func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbrosPodgotovkiUnita) (*ResultatSbrosaPodgotovkiUnita, error) {
-	result := &ResultatSbrosaPodgotovkiUnita{
+func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbrosPodgotovkiUnita) (result *ResultatSbrosaPodgotovkiUnita, err error) {
+	result = &ResultatSbrosaPodgotovkiUnita{
 		ResponseId: activity.GetInfo(ctx).WorkflowExecution.ID,
 		UnitId:     command.UnitId,
 		Success:    1,
 		Steps:      []model.Step{},
 	}
 
-	_, err := json.Marshal(command)
+	defer func() {
+		success := false
+		if result != nil {
+			success = result.Success == 1
+		}
+		state.RecordActivityResult("sbros_podgotovki", command.ProjectId, command.UnitId, command.Name, command.ProjectName, success)
+	}()
+
+	_, err = json.Marshal(command)
 	if err != nil {
 		result.Success = 0
 		return wrapResultatSbrosaPodgotovki(result), nil

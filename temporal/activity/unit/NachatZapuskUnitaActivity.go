@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"runner/state"
 	"runner/temporal/activity/unit/model"
 	"strings"
 	"time"
@@ -44,15 +45,22 @@ func wrapResultatZapuskaSuccess(result *ResultatZapuskaUnita) *ResultatZapuskaUn
 	return result
 }
 
-func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (*ResultatZapuskaUnita, error) {
-	result := &ResultatZapuskaUnita{
+func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (result *ResultatZapuskaUnita, err error) {
+	result = &ResultatZapuskaUnita{
 		Success:    1,
 		Steps:      []model.Step{},
 		ResponseId: activity.GetInfo(ctx).WorkflowExecution.ID,
-		Ports:      []model.UnitPort{},
 	}
 
-	_, err := json.Marshal(command)
+	defer func() {
+		success := false
+		if result != nil {
+			success = result.Success == 1
+		}
+		state.RecordActivityResult("zapusk", command.ProjectId, command.Id, command.Name, command.ProjectName, success)
+	}()
+
+	_, err = json.Marshal(command)
 	if err != nil {
 		result.Success = 0
 		return wrapResultatZapuska(result), nil

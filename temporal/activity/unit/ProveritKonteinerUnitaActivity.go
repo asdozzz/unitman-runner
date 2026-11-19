@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"runner/state"
 	"strings"
+	"time"
 )
 
 type ProveritKonteinerUnita struct {
@@ -19,10 +21,23 @@ type ResultatProverkiKonteineraUnita struct {
 	Success int
 }
 
-func ProveritKonteinerUnitaActivity(ctx context.Context, command ProveritKonteinerUnita) (*ResultatProverkiKonteineraUnita, error) {
-	result := &ResultatProverkiKonteineraUnita{
+func ProveritKonteinerUnitaActivity(ctx context.Context, command ProveritKonteinerUnita) (result *ResultatProverkiKonteineraUnita, err error) {
+	result = &ResultatProverkiKonteineraUnita{
 		Success: 1,
 	}
+
+	defer func() {
+		success := false
+		if result != nil {
+			success = result.Success == 1
+		}
+		state.RecordActivityResult("proverka_konteinera", command.ProjectId, command.Id, command.Name, command.ProjectName, success)
+		if result != nil && result.Success == 1 {
+			state.SetActual(command.Id, state.ActualRunning, time.Now().Unix())
+		} else {
+			state.SetActual(command.Id, state.ActualAbsent, time.Now().Unix())
+		}
+	}()
 
 	out, err := json.Marshal(command)
 	if err != nil {

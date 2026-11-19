@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runner/state"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
 	"strings"
@@ -13,9 +14,10 @@ import (
 )
 
 type NachatObnovlenieUnita struct {
-	ProjectId string
-	Id        string
-	Name      string
+	ProjectId   string
+	ProjectName string
+	Id          string
+	Name        string
 }
 
 type ResultatObnovleniyaUnita struct {
@@ -24,11 +26,19 @@ type ResultatObnovleniyaUnita struct {
 	Config  string
 }
 
-func NachatObnovlenieUnitaActivity(ctx context.Context, command NachatObnovlenieUnita) (*ResultatObnovleniyaUnita, error) {
-	result := &ResultatObnovleniyaUnita{
+func NachatObnovlenieUnitaActivity(ctx context.Context, command NachatObnovlenieUnita) (result *ResultatObnovleniyaUnita, err error) {
+	result = &ResultatObnovleniyaUnita{
 		Success: 1,
 		Steps:   []model.Step{},
 	}
+
+	defer func() {
+		success := false
+		if result != nil {
+			success = result.Success == 1
+		}
+		state.RecordActivityResult("obnovlenie", command.ProjectId, command.Id, command.Name, command.ProjectName, success)
+	}()
 
 	unixtimeStart := time.Now().Unix()
 	out, err := json.Marshal(command)

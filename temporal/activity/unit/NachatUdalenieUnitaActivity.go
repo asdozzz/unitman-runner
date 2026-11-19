@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runner/state"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
 	"strings"
@@ -13,10 +14,11 @@ import (
 )
 
 type NachatUdalenieUnita struct {
-	ProjectId  string
-	Id         string
-	Name       string
-	StorageUrl string
+	ProjectId   string
+	ProjectName string
+	Id          string
+	Name        string
+	StorageUrl  string
 }
 
 type ResultatUdaleniyaUnita struct {
@@ -24,11 +26,22 @@ type ResultatUdaleniyaUnita struct {
 	Steps   []model.Step
 }
 
-func NachatUdalenieUnitaActivity(ctx context.Context, command NachatUdalenieUnita) (*ResultatUdaleniyaUnita, error) {
-	result := &ResultatUdaleniyaUnita{
+func NachatUdalenieUnitaActivity(ctx context.Context, command NachatUdalenieUnita) (result *ResultatUdaleniyaUnita, err error) {
+	result = &ResultatUdaleniyaUnita{
 		Success: 1,
 		Steps:   []model.Step{},
 	}
+
+	defer func() {
+		success := false
+		if result != nil {
+			success = result.Success == 1
+		}
+		state.RecordActivityResult("udalenie", command.ProjectId, command.Id, command.Name, command.ProjectName, success)
+		if success {
+			state.Delete(command.Id)
+		}
+	}()
 
 	logCommand := command
 	logCommand.StorageUrl = RedactStorageURL(command.StorageUrl)

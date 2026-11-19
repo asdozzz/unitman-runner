@@ -3,11 +3,13 @@ package unit
 import (
 	"context"
 	"encoding/json"
-	"go.temporal.io/sdk/activity"
 	"os"
+	"runner/state"
 	"runner/temporal/activity/unit/model"
 	"strings"
 	"time"
+
+	"go.temporal.io/sdk/activity"
 )
 
 type NachatDeistvieUnita struct {
@@ -39,14 +41,22 @@ func wrapResultatDeistvieSuccess(result *ResultatDeistviyaUnita) *ResultatDeistv
 	return result
 }
 
-func NachatDeistvieUnitaActivity(ctx context.Context, command NachatZapuskUnita) (*ResultatDeistviyaUnita, error) {
-	result := &ResultatDeistviyaUnita{
+func NachatDeistvieUnitaActivity(ctx context.Context, command NachatZapuskUnita) (result *ResultatDeistviyaUnita, err error) {
+	result = &ResultatDeistviyaUnita{
 		Success:    1,
 		Steps:      []model.Step{},
 		ResponseId: activity.GetInfo(ctx).WorkflowExecution.ID,
 	}
 
-	_, err := json.Marshal(command)
+	defer func() {
+		success := false
+		if result != nil {
+			success = result.Success == 1
+		}
+		state.RecordActivityResult("deistvie", command.ProjectId, command.Id, command.Name, command.ProjectName, success)
+	}()
+
+	_, err = json.Marshal(command)
 	if err != nil {
 		result.Success = 0
 		return wrapResultatDeistvie(result), nil

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runner/state"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
 	"strings"
@@ -54,12 +55,20 @@ func wrapResultatPogotovkiSuccess(result *ResultatPodgotovkiUnita) *ResultatPodg
 	return result
 }
 
-func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovkuUnita) (*ResultatPodgotovkiUnita, error) {
-	result := &ResultatPodgotovkiUnita{
+func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovkuUnita) (result *ResultatPodgotovkiUnita, err error) {
+	result = &ResultatPodgotovkiUnita{
 		Success:    1,
 		Steps:      []model.Step{},
 		ResponseId: activity.GetInfo(ctx).WorkflowExecution.ID,
 	}
+
+	defer func() {
+		success := false
+		if result != nil {
+			success = result.Success == 1
+		}
+		state.RecordActivityResult("podgotovka", command.ProjectId, command.Id, command.Name, command.ProjectName, success)
+	}()
 
 	logCommand := command
 	logCommand.StorageUrl = RedactStorageURL(command.StorageUrl)
