@@ -167,6 +167,17 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		return wrapResultatPogotovki(result), nil
 	}
 
+	// IDE запускается вместе с unit в docker compose up. Проверяем её
+	// health-эндпоинт из network namespace юнита: снаружи порт 47000
+	// не публикуется. Ошибка готовности делает подготовку неуспешной.
+	unixtimeStart = time.Now().Unix()
+	err = WaitIdeReady(unitPath)
+	result.Steps = model.AddStepToSteps(result.Steps, ideReadyStepCommand, "", err, unixtimeStart)
+	if err != nil {
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
+	}
+
 	unixtimeStart = time.Now().Unix()
 	msg, err = SyncUnitRepo(unitPath, command.Branch, command.StorageUrl)
 	result.Steps = model.AddStepToSteps(result.Steps, "unit-repo-sync branch="+command.Branch, msg, err, unixtimeStart)
@@ -192,6 +203,17 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 			result.Success = 0
 			return wrapResultatPogotovki(result), nil
 		}
+	}
+
+	// IDE стартует вместе с unit до SyncUnitRepo, поэтому её /tmp/git-index
+	// мог быть скопирован до появления .git/index. Обновляем индекс после
+	// синхронизации репозитория и томов, иначе git diff в редакторе не работает.
+	unixtimeStart = time.Now().Unix()
+	err = RefreshIdeGitIndex(unitPath)
+	result.Steps = model.AddStepToSteps(result.Steps, ideGitIndexStepCommand, "", err, unixtimeStart)
+	if err != nil {
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
 	}
 
 	unixtimeStart = time.Now().Unix()

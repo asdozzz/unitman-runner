@@ -21,6 +21,32 @@ services:
       # Staging вложений, которые подготовил runner.
       - ./seed:/seed:ro
 
+  # Read-only IDE. Порт 47000 не публикуется на хост: сервис живёт
+  # в network namespace контейнера unit и доступен через proxy по поддомену.
+  ide:
+    image: asdozzz/unitman-ide:latest
+    build:
+      context: ./ide
+    network_mode: "service:unit"
+    depends_on:
+      - unit
+    read_only: true
+    mem_limit: 256m
+    memswap_limit: 256m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    volumes:
+      - unit_app:/home/coder/project:ro
+    tmpfs:
+      - /tmp
+      - /run
+    environment:
+      - GIT_OPTIONAL_LOCKS=0
+      - GIT_INDEX_FILE=/tmp/git-index
+      - HOME=/home/coder
+
 
 volumes:
   unit_app:
