@@ -12,6 +12,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -30,8 +32,9 @@ const (
 )
 
 const (
-	ErrorKeyTurnFailed     = "opencode.turn.failed"
-	ErrorKeyUnexpectedKind = "opencode.turn.unexpected_kind"
+	ErrorKeyTurnFailed            = "opencode.turn.failed"
+	ErrorKeyUnexpectedKind        = "opencode.turn.unexpected_kind"
+	ErrorKeyUnitDirectoryNotFound = "opencode.turn.unit_directory_not_found"
 )
 
 const (
@@ -62,8 +65,20 @@ type Replika struct {
 	Text string `json:"Text"`
 }
 
+// UnitRef — юнит, к которому привязана сессия. Бэкенд передаёт только
+// идентификаторы: каталог юнита вычисляет раннер по своей схеме раскладки.
+type UnitRef struct {
+	ProjectID string `json:"ProjectId"`
+	UnitID    string `json:"UnitId"`
+}
+
 // HodCommand — payload активности. SessionId приходит как null на первом ходе
 // и разворачивается в пустую строку.
+//
+// Units — упорядоченный список юнитов сессии: Units[0] задаёт рабочий каталог
+// хода, Units[1..] — дополнительные корни workspace. Пустой список означает
+// свободную сессию. ProjectID/UnitID продублированы для обратной совместимости
+// и равны Units[0].
 type HodCommand struct {
 	SessionID string    `json:"SessionId"`
 	Prompt    string    `json:"Prompt"`
@@ -72,6 +87,9 @@ type HodCommand struct {
 	URL       string    `json:"Url"`
 	Model     string    `json:"Model"`
 	ApiKey    string    `json:"ApiKey"`
+	Units     []UnitRef `json:"Units"`
+	ProjectID *string   `json:"ProjectId"`
+	UnitID    *string   `json:"UnitId"`
 }
 
 // MarshalJSON сохраняет массивы пустыми массивами, а не null: этого требует
@@ -83,6 +101,9 @@ func (c HodCommand) MarshalJSON() ([]byte, error) {
 	}
 	if c.History == nil {
 		c.History = []Replika{}
+	}
+	if c.Units == nil {
+		c.Units = []UnitRef{}
 	}
 	return json.Marshal(plain(c))
 }
@@ -143,6 +164,9 @@ type Activities struct {
 	Secret     string
 	Client     *http.Client
 	OpenCode   OpenCodeExecutor
+	// WorkDir — корень раскладки раннера, внутри которого лежит projects/.
+	// Пустое значение означает текущий рабочий каталог процесса.
+	WorkDir string
 }
 
 // VipolnitHodOpenCodeActivity выполняет ровно один ход диалога с OpenCode.
@@ -171,6 +195,15 @@ func (a *Activities) VipolnitHodOpenCodeActivity(ctx context.Context, cmd HodCom
 		return errorResult(ErrorKeyTurnFailed), nil
 	}
 
+	// Каталоги юнитов вычисляет раннер: бэкенд передаёт только ProjectId/UnitId.
+	// Любой отсутствующий каталог — ошибка хода без частичного запуска.
+	workDir, roots, dirErr := a.resolveWorkDirs(cmd)
+	if dirErr != nil {
+		log.Printf("opencode: cannot resolve workspace: %v", dirErr)
+		p.publish(ctx, true, false)
+		return errorResult(ErrorKeyUnitDirectoryNotFound), nil
+	}
+
 	runCtx, cancel := context.WithTimeout(ctx, turnBudget)
 	defer cancel()
 
@@ -180,6 +213,8 @@ func (a *Activities) VipolnitHodOpenCodeActivity(ctx context.Context, cmd HodCom
 		URL:       cmd.URL,
 		Model:     cmd.Model,
 		APIKey:    cmd.ApiKey,
+		WorkDir:   workDir,
+		Roots:     roots,
 		Messages:  sobratSoobsheniya(cmd),
 	})
 
@@ -239,6 +274,119 @@ func sobratSoobsheniya(cmd HodCommand) []Replika {
 	msgs = append(msgs, cmd.History...)
 	msgs = append(msgs, Replika{Role: "user", Text: cmd.Prompt})
 	return msgs
+}
+
+// ─── рабочая директория ──────────────────────────────────────────────────────
+
+// resolveWorkDirs собирает рабочие каталоги хода.
+//
+// Первый возвращённый каталог — cwd хода, остальные — дополнительные корни
+// workspace (multi-root), порядок юнитов сохраняется. Пустой Units означает
+// свободную сессию: работает в корне проекта, а без ProjectID — в корне раннера.
+func (a *Activities) resolveWorkDirs(cmd HodCommand) (cwd string, roots []string, err error) {
+	units := cmd.Units
+
+	// Обратная совместимость со старыми бэкендами: пара верхнего уровня.
+	if len(units) == 0 && (cmd.ProjectID != nil || cmd.UnitID != nil) {
+		units = []UnitRef{{ProjectID: deref(cmd.ProjectID), UnitID: deref(cmd.UnitID)}}
+	}
+
+	base := a.workRoot()
+
+	if len(units) == 0 {
+		dir, err := a.checkDir(base)
+		return dir, nil, err
+	}
+
+	roots = make([]string, 0, len(units))
+	for _, unit := range units {
+		dir, err := a.checkDir(a.unitDir(base, unit))
+		if err != nil {
+			// Частичный запуск запрещён: любой отсутствующий корень — ошибка хода.
+			return "", nil, err
+		}
+		roots = append(roots, dir)
+	}
+
+	return roots[0], roots[1:], nil
+}
+
+// unitDir вычисляет каталог юнита по существующей схеме раскладки раннера:
+// <base>/projects/<ProjectId>/units/<UnitId>. Пустой UnitId — корень проекта.
+// Некорректный идентификатор возвращает пустую строку, чтобы checkDir не смог
+// выйти за пределы корня (защита от path traversal).
+func (a *Activities) unitDir(base string, unit UnitRef) string {
+	projectID := strings.TrimSpace(unit.ProjectID)
+	if !validPathSegment(projectID) {
+		return ""
+	}
+
+	dir := filepath.Join(base, "projects", projectID)
+
+	unitID := strings.TrimSpace(unit.UnitID)
+	if unitID == "" {
+		return dir
+	}
+	if !validPathSegment(unitID) {
+		return ""
+	}
+
+	return filepath.Join(dir, "units", unitID)
+}
+
+// workRoot — корень, внутри которого лежит projects/.
+func (a *Activities) workRoot() string {
+	if strings.TrimSpace(a.WorkDir) != "" {
+		return a.WorkDir
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	return wd
+}
+
+// checkDir проверяет, что каталог существует, и возвращает его абсолютный путь.
+func (a *Activities) checkDir(dir string) (string, error) {
+	if strings.TrimSpace(dir) == "" {
+		return "", errors.New("unit directory is not defined")
+	}
+
+	absolute, err := filepath.Abs(dir)
+	if err != nil {
+		return "", fmt.Errorf("unit directory is not available: %w", err)
+	}
+
+	info, err := os.Stat(absolute)
+	if err != nil || !info.IsDir() {
+		return "", fmt.Errorf("unit directory not found: %s", absolute)
+	}
+
+	return absolute, nil
+}
+
+// validPathSegment пропускает только один нормальный сегмент пути: без
+// разделителей, пустых значений и переходов вверх.
+func validPathSegment(segment string) bool {
+	switch segment {
+	case "", ".", "..":
+		return false
+	}
+
+	if strings.ContainsAny(segment, `/\`) {
+		return false
+	}
+
+	return filepath.Base(segment) == segment
+}
+
+// deref разыменовывает необязательную строку: nil → "".
+func deref(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func prevratitRezultat(a OpenCodeAnswer) HodResult {

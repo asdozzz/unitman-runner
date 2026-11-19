@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"runner/temporal/utils"
 	"strings"
 )
 
@@ -41,8 +40,7 @@ func ProveritKonteinerUnitaActivity(ctx context.Context, command ProveritKontein
 
 	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
 
-	args := []string{"docker", "compose", "exec", "-T", "unit", "sh", "-c", "pwd"}
-	_, err = utils.ExecCommand(filepath, args)
+	_, err = ExecInUnitContainer(filepath, "pwd")
 
 	if err != nil {
 		if strings.Contains(err.Error(), "no such service") {

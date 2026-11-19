@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
 	"strings"
@@ -39,7 +40,7 @@ func NachatObnovlenieUnitaActivity(ctx context.Context, command NachatObnovlenie
 
 	fmt.Println("NachatObnovlenieUnita:" + string(out))
 
-	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
+	filepathUnit := "./projects/" + command.ProjectId + "/units/" + command.Id
 
 	unixtimeStart = time.Now().Unix()
 	currentPath, err := os.Getwd()
@@ -49,46 +50,65 @@ func NachatObnovlenieUnitaActivity(ctx context.Context, command NachatObnovlenie
 		return result, nil
 	}
 
-	filepathApp := currentPath + "/" + filepath + "/app"
+	unitPath := filepath.Join(currentPath, filepathUnit)
 
-	args := []string{"git", "pull"}
-	unixtimeStart = time.Now().Unix()
-	msg, err := utils.ExecCommand(filepathApp, args)
-	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
-	if err != nil {
-		result.Success = 0
-		return result, nil
-	}
-
-	args = []string{"docker", "compose", "exec", "-T", "unit", "sh", "-c", "pwd"}
-	_, err = utils.ExecCommand(filepath, args)
-
-	unitIsRunning := true
-	if err != nil {
-		if strings.Contains(err.Error(), "no such service") {
-			unitIsRunning = false
-		}
-
-		if strings.Contains(err.Error(), "is not running") {
-			unitIsRunning = false
-		}
-	}
-
-	if unitIsRunning {
-		args = []string{"docker", "compose", "cp", "-a", filepathApp, "unit:/"}
+	for _, requiredFile := range []string{"compose.yaml", ".env"} {
 		unixtimeStart = time.Now().Unix()
-		msg, err := utils.ExecCommand(filepath, args)
-		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
+		_, err = os.Stat(filepath.Join(unitPath, requiredFile))
+		result.Steps = model.AddStepToSteps(result.Steps, "check "+requiredFile, "", err, unixtimeStart)
 		if err != nil {
 			result.Success = 0
 			return result, nil
 		}
 	}
 
-	b, _ := os.ReadFile(filepathApp + "/unitman.yaml") // just pass the file name
-	if b != nil {
-		result.Config = string(b)
+	volumeSteps, err := EnsureUnitVolumes(unitPath, command.Id)
+	result.Steps = append(result.Steps, volumeSteps...)
+	if err != nil {
+		result.Success = 0
+		return result, nil
 	}
+
+	args := []string{"docker", "compose", "up", "-d"}
+	unixtimeStart = time.Now().Unix()
+	msg, err := utils.ExecCommand(unitPath, args)
+	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
+	if err != nil {
+		result.Success = 0
+		return result, nil
+	}
+
+	unixtimeStart = time.Now().Unix()
+	err = WaitUnitReady(unitPath)
+	result.Steps = model.AddStepToSteps(result.Steps, "wait unit ready", "", err, unixtimeStart)
+	if err != nil {
+		result.Success = 0
+		return result, nil
+	}
+
+	branch := ReadUnitEnvValue(unitPath, "UNITMAN_BRANCH_NAME")
+	branchLabel := branch
+	if branchLabel == "" {
+		branchLabel = "current"
+	}
+
+	unixtimeStart = time.Now().Unix()
+	msg, err = SyncUnitRepo(unitPath, branch, "")
+	result.Steps = model.AddStepToSteps(result.Steps, "unit-repo-sync branch="+branchLabel, msg, err, unixtimeStart)
+	if err != nil {
+		result.Success = 0
+		return result, nil
+	}
+
+	unixtimeStart = time.Now().Unix()
+	unitConfig, err := ReadUnitConfig(unitPath)
+	result.Steps = model.AddStepToSteps(result.Steps, "read unitman.yaml", "", err, unixtimeStart)
+	if err != nil {
+		result.Success = 0
+		return result, nil
+	}
+
+	result.Config = unitConfig
 
 	return result, nil
 }

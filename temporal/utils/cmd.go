@@ -115,6 +115,23 @@ func ExecCommandWithTimeout(workingDirectory string, app []string, timeout time.
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
+	return execCommand(ctx, workingDirectory, app, timeout, cancel)
+}
+
+// ExecCommandContext выполняет команду с привязкой к родительскому контексту.
+// Отмена контекста завершает всю группу процессов команды.
+func ExecCommandContext(ctx context.Context, workingDirectory string, app []string) (string, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	return execCommand(ctx, workingDirectory, app, 0, cancel)
+}
+
+func execCommand(ctx context.Context, workingDirectory string, app []string, timeout time.Duration, cancel func()) (string, error) {
+	if cancel == nil {
+		cancel = func() {}
+	}
+
 	cmd := exec.Command(app[0], app[1:]...)
 	cmd.Dir = workingDirectory
 	// Ввод не поддерживаем: дочерний процесс читает из /dev/null и сразу получает EOF.
@@ -159,7 +176,10 @@ func ExecCommandWithTimeout(workingDirectory string, app []string, timeout time.
 	}
 
 	if ctx.Err() == context.DeadlineExceeded {
-		return outStr, fmt.Errorf("команда не завершилась за %s (возможно, ожидает ввода): %s", timeout, command)
+		if timeout > 0 {
+			return outStr, fmt.Errorf("команда не завершилась за %s (возможно, ожидает ввода): %s", timeout, command)
+		}
+		return outStr, fmt.Errorf("команда не завершилась за отведённое время (возможно, ожидает ввода): %s", command)
 	}
 
 	if ctx.Err() == context.Canceled {

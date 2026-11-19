@@ -17,10 +17,15 @@ import (
 )
 
 const (
-	// Каталог томов внутри юнита: попадает в образ контейнера как /app/unitman_volumes.
+	// Каталог томов внутри юнита: /app/unitman_volumes.
 	unitmanVolumesDirName = "unitman_volumes"
-	// Каталог приложения юнита: Dockerfile копирует ./app в /app.
-	unitmanUnitAppDirName = "app"
+	// Staging-каталог внутри каталога юнита, который монтируется в /seed.
+	unitStagingDirName = "seed"
+	// Staging-каталог вложений: <unit>/seed/volumes.
+	unitStagingVolumesDirName = "volumes"
+
+	unitVolumesScriptPath = "/usr/local/bin/unit-volumes-sync"
+	unitVolumeMarkersDir  = "/app/.unitman/volumes"
 
 	volumeDownloadTimeout = 10 * time.Minute
 	// Сколько раз разрешено перейти по ссылке из ответа медиатеки.
@@ -42,79 +47,150 @@ type Volume struct {
 	FileId   *string
 }
 
-// PrepareVolumes создаёт каталог unitman_volumes в юните, для каждого тома
-// создаёт каталог с именем Volume.Dir, скачивает zip-архив из медиатеки
-// и распаковывает его содержимое внутрь каталога тома.
-func PrepareVolumes(unitPath string, volumes []Volume) ([]model.Step, error) {
+// VolumeSeedChecker сообщает, был ли том уже засеян в юните.
+// nil означает, что проверка недоступна и том нужно подготовить.
+type VolumeSeedChecker func(dir string) (bool, error)
+
+// PrepareVolumes скачивает и распаковывает вложения в staging-каталог
+// <unit>/seed/volumes. В сам юнит они попадают отдельным шагом через
+// unit-volumes-sync: это позволяет сохранить изменения пользователя.
+//
+// Возвращает шаги, количество подготовленных томов и ошибку.
+func PrepareVolumes(unitPath string, volumes []Volume, isSeeded VolumeSeedChecker) ([]model.Step, int, error) {
 	steps := []model.Step{}
 
-	volumesRootPath := filepath.Join(unitPath, unitmanUnitAppDirName, unitmanVolumesDirName)
+	if len(volumes) == 0 {
+		return steps, 0, nil
+	}
+
+	stagingRootPath := filepath.Join(unitPath, unitStagingDirName, unitStagingVolumesDirName)
 
 	unixtimeStart := time.Now().Unix()
-	err := os.MkdirAll(volumesRootPath, os.ModePerm)
-	steps = model.AddStepToSteps(steps, "mkdir "+volumesRootPath, volumesRootPath, err, unixtimeStart)
+	err := os.MkdirAll(stagingRootPath, os.ModePerm)
+	steps = model.AddStepToSteps(steps, "mkdir "+stagingRootPath, stagingRootPath, err, unixtimeStart)
 	if err != nil {
-		return steps, fmt.Errorf("не удалось создать каталог томов %s: %w", volumesRootPath, err)
+		return steps, 0, fmt.Errorf("не удалось создать staging-каталог томов %s: %w", stagingRootPath, err)
 	}
+
+	manifestEntries := []string{}
 
 	for _, volume := range volumes {
 		unixtimeStart = time.Now().Unix()
-		volumePath, errPath := makeVolumePath(volumesRootPath, volume.Dir)
+
+		if strings.ContainsAny(volume.Dir, "\r\n") {
+			errDir := fmt.Errorf("каталог тома содержит перевод строки: %q", volume.Dir)
+			steps = model.AddStepToSteps(steps, "volume dir "+volume.Dir, "", errDir, unixtimeStart)
+			return steps, 0, errDir
+		}
+
+		volumePath, errPath := makeVolumePath(stagingRootPath, volume.Dir)
 		if errPath != nil {
 			steps = model.AddStepToSteps(steps, "volume dir "+volume.Dir, "", errPath, unixtimeStart)
-			return steps, errPath
+			return steps, 0, errPath
 		}
 
-		downloadUrl := volume.downloadUrl()
-
-		if downloadUrl == "" {
-			unixtimeStart = time.Now().Unix()
-			err = os.MkdirAll(volumePath, os.ModePerm)
-			steps = model.AddStepToSteps(steps, "mkdir "+volumePath, "файл к тому не прикреплён", err, unixtimeStart)
-			if err != nil {
-				return steps, fmt.Errorf("не удалось создать каталог тома %s: %w", volumePath, err)
+		if isSeeded != nil {
+			seeded, errSeeded := isSeeded(volume.Dir)
+			if errSeeded != nil {
+				steps = model.AddStepToSteps(steps, "check volume "+volume.Dir, "", errSeeded, unixtimeStart)
+				return steps, 0, errSeeded
 			}
 
-			continue
+			if seeded {
+				steps = model.AddStepToSteps(steps, "check volume "+volume.Dir, "том уже засеян", nil, unixtimeStart)
+				continue
+			}
 		}
 
-		// Том пересобирается с нуля, чтобы в каталоге не оставались файлы прошлой подготовки.
+		// Staging пересоздаётся, чтобы не оставались файлы прошлой подготовки.
 		unixtimeStart = time.Now().Unix()
 		err = os.RemoveAll(volumePath)
 		if err != nil {
 			steps = model.AddStepToSteps(steps, "clean "+volumePath, "", err, unixtimeStart)
-			return steps, fmt.Errorf("не удалось очистить каталог тома %s: %w", volumePath, err)
+			return steps, 0, fmt.Errorf("не удалось очистить staging-каталог тома %s: %w", volumePath, err)
 		}
 
 		unixtimeStart = time.Now().Unix()
 		err = os.MkdirAll(volumePath, os.ModePerm)
 		steps = model.AddStepToSteps(steps, "mkdir "+volumePath, volumePath, err, unixtimeStart)
 		if err != nil {
-			return steps, fmt.Errorf("не удалось создать каталог тома %s: %w", volumePath, err)
+			return steps, 0, fmt.Errorf("не удалось создать staging-каталог тома %s: %w", volumePath, err)
 		}
 
-		unixtimeStart = time.Now().Unix()
-		archivePath, cleanupArchive, errDownload := downloadVolumeArchive(downloadUrl, volume.archiveName())
-		if errDownload != nil {
-			steps = model.AddStepToSteps(steps, "download volume "+volume.Name+" from "+downloadUrl, "", errDownload, unixtimeStart)
-			return steps, errDownload
+		downloadUrl := volume.downloadUrl()
+
+		if downloadUrl != "" {
+			unixtimeStart = time.Now().Unix()
+			archivePath, cleanupArchive, errDownload := downloadVolumeArchive(downloadUrl, volume.archiveName())
+			if errDownload != nil {
+				steps = model.AddStepToSteps(steps, "download volume "+volume.Name, "", errDownload, unixtimeStart)
+				return steps, 0, errDownload
+			}
+
+			archiveName := filepath.Base(archivePath)
+
+			steps = model.AddStepToSteps(steps, "download volume "+volume.Name, archiveName, nil, unixtimeStart)
+
+			unixtimeStart = time.Now().Unix()
+			errUnzip := unzipVolumeArchive(archivePath, volumePath)
+			cleanupArchive()
+
+			steps = model.AddStepToSteps(steps, "unzip "+archiveName+" to "+volumePath, "распакован", errUnzip, unixtimeStart)
+			if errUnzip != nil {
+				return steps, 0, errUnzip
+			}
+		} else {
+			steps = model.AddStepToSteps(steps, "volume "+volume.Dir, "файл к тому не прикреплён", nil, unixtimeStart)
 		}
 
-		archiveName := filepath.Base(archivePath)
-
-		steps = model.AddStepToSteps(steps, "download volume "+volume.Name+" from "+downloadUrl, archiveName, nil, unixtimeStart)
-
-		unixtimeStart = time.Now().Unix()
-		errUnzip := unzipVolumeArchive(archivePath, volumePath)
-		cleanupArchive()
-
-		steps = model.AddStepToSteps(steps, "unzip "+archiveName+" to "+volumePath, "распакован", errUnzip, unixtimeStart)
-		if errUnzip != nil {
-			return steps, errUnzip
-		}
+		manifestEntries = append(manifestEntries, volume.Dir)
 	}
 
-	return steps, nil
+	manifestPath := filepath.Join(stagingRootPath, ".manifest")
+	manifestContent := ""
+	if len(manifestEntries) > 0 {
+		manifestContent = strings.Join(manifestEntries, "\n") + "\n"
+	}
+
+	unixtimeStart = time.Now().Unix()
+	err = os.WriteFile(manifestPath, []byte(manifestContent), 0644)
+	steps = model.AddStepToSteps(steps, "write volume manifest", manifestPath, err, unixtimeStart)
+	if err != nil {
+		return steps, 0, fmt.Errorf("не удалось записать манифест томов %s: %w", manifestPath, err)
+	}
+
+	return steps, len(manifestEntries), nil
+}
+
+// UnitVolumeSeeded проверяет маркер тома внутри юнита.
+func UnitVolumeSeeded(unitPath, dir string) (bool, error) {
+	markerPath := unitVolumeMarkersDir + "/" + strings.TrimPrefix(dir, "/")
+
+	_, err := ExecInUnitContainer(unitPath, "test -e "+shellQuote(markerPath))
+	if err == nil {
+		return true, nil
+	}
+
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "is not running") || strings.Contains(message, "no such service") {
+		return false, err
+	}
+
+	if strings.Contains(message, "exit status 1") {
+		return false, nil
+	}
+
+	return false, err
+}
+
+// SyncUnitVolumes копирует подготовленный staging в /app/unitman_volumes.
+func SyncUnitVolumes(unitPath string) (string, error) {
+	return ExecInUnitContainer(unitPath, unitVolumesScriptPath)
+}
+
+// shellQuote экранирует значение для sh -c.
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
 // downloadUrl возвращает ссылку на архив тома.
@@ -192,8 +268,8 @@ func resolveApiHostUrl(downloadUrl string) string {
 func makeVolumePath(volumesRootPath string, dir string) (string, error) {
 	preparedDir := strings.TrimSpace(dir)
 
-	if preparedDir == "" {
-		return "", fmt.Errorf("не задан каталог тома")
+	if preparedDir == "" || preparedDir == "." || preparedDir == ".." {
+		return "", fmt.Errorf("некорректный каталог тома: %q", dir)
 	}
 
 	volumePath := filepath.Join(volumesRootPath, filepath.FromSlash(preparedDir))

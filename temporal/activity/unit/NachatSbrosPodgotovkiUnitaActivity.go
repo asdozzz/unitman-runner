@@ -3,12 +3,13 @@ package unit
 import (
 	"context"
 	"encoding/json"
-	"go.temporal.io/sdk/activity"
 	"os"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
 	"strings"
 	"time"
+
+	"go.temporal.io/sdk/activity"
 )
 
 type NachatSbrosPodgotovkiUnita struct {
@@ -71,9 +72,8 @@ func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbros
 
 	filepath = currentPath + "/" + filepath
 
-	args := []string{"docker", "compose", "exec", "-T", "unit", "sh", "-c", "pwd"}
 	unixtimeCheckStart := time.Now().Unix()
-	_, err = utils.ExecCommand(filepath, args)
+	_, err = ExecInUnitContainer(filepath, "pwd")
 
 	unitIsRunning := true
 	if err != nil {
@@ -90,8 +90,8 @@ func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbros
 	if unitIsRunning == true {
 		for _, commandString := range command.Commands {
 			unixtimeStart := time.Now().Unix()
-			args := []string{"docker", "compose", "exec", "-T", "unit", "sh", "-c", commandString}
-			msg, errCommand := utils.ExecCommand(filepath, args)
+			args := UnitContainerCommand(commandString)
+			msg, errCommand := ExecInUnitContainer(filepath, commandString)
 			result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand, unixtimeStart)
 			if errCommand != nil {
 				result.Success = 0
@@ -101,7 +101,9 @@ func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbros
 			}
 		}
 
-		args := []string{"docker", "compose", "down", "-v"}
+		// Тома с состоянием не удаляем: сброс подготовки останавливает
+		// контейнеры, но сохраняет /app и данные внутреннего Docker.
+		args := []string{"docker", "compose", "down"}
 		unixtimeDownStart := time.Now().Unix()
 		msg, err := utils.ExecCommand(filepath, args)
 		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeDownStart)

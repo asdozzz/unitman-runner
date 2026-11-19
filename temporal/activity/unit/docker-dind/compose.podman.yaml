@@ -10,9 +10,23 @@ services:
     mem_limit: ${UNITMAN_MEMORY_LIMIT:-3g}
     memswap_limit: ${UNITMAN_MEMORY_LIMIT:-3g}
     volumes:
+      - unit_app:/app
+      - unit_containers:/var/lib/containers
+      # Read-only источник для первичного seed git. Рабочая копия живёт в unit_app.
+      - ../../mainBranch/.git:/seed/git:ro
+      # Staging вложений, которые подготовил runner.
+      - ./seed:/seed:ro
       - ./podman-config/registries.conf:/usr/share/containers/registries.conf.d/99-override.conf:ro
     env_file:
       - .env
+
+volumes:
+  unit_app:
+    external: true
+    name: ${UNITMAN_UNIT_APP_VOLUME}
+  unit_containers:
+    external: true
+    name: ${UNITMAN_UNIT_CONTAINERS_VOLUME}
 
 networks:
   default:

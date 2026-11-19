@@ -11,6 +11,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -18,15 +20,17 @@ import (
 )
 
 type fakeExecutor struct {
-	answer OpenCodeAnswer
-	err    error
-	panic  interface{}
-	calls  int
-	block  bool
+	answer  OpenCodeAnswer
+	err     error
+	panic   interface{}
+	calls   int
+	block   bool
+	lastReq OpenCodeRequest
 }
 
-func (f *fakeExecutor) Execute(ctx context.Context, _ OpenCodeRequest) (OpenCodeAnswer, error) {
+func (f *fakeExecutor) Execute(ctx context.Context, req OpenCodeRequest) (OpenCodeAnswer, error) {
 	f.calls++
+	f.lastReq = req
 	if f.panic != nil {
 		panic(f.panic)
 	}
@@ -258,13 +262,217 @@ func TestSobratSoobsheniyaKeepsHistoryAndAppendsPrompt(t *testing.T) {
 	}
 }
 
+// prepareUnitDirs создаёт каталоги юнитов по схеме раннера и возвращает их пути.
+func prepareUnitDirs(t *testing.T, root string, units ...UnitRef) []string {
+	t.Helper()
+
+	dirs := make([]string, 0, len(units))
+	for _, unit := range units {
+		dir := filepath.Join(root, "projects", unit.ProjectID, "units", unit.UnitID)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("cannot create unit dir: %v", err)
+		}
+		dirs = append(dirs, dir)
+	}
+
+	return dirs
+}
+
+func TestActivityResolvesUnitDirectoriesInOrder(t *testing.T) {
+	root := t.TempDir()
+	units := []UnitRef{
+		{ProjectID: "project-1", UnitID: "unit-1"},
+		{ProjectID: "project-1", UnitID: "unit-2"},
+	}
+	dirs := prepareUnitDirs(t, root, units...)
+
+	executor := &fakeExecutor{answer: OpenCodeAnswer{Text: "Готово"}}
+	acts := &Activities{WorkDir: root, OpenCode: executor}
+	cmd := validCommand()
+	cmd.Units = units
+
+	result, err := acts.VipolnitHodOpenCodeActivity(context.Background(), cmd)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Kind != KindAnswer {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if executor.lastReq.WorkDir != dirs[0] {
+		t.Fatalf("cwd must be the first unit: got %q want %q", executor.lastReq.WorkDir, dirs[0])
+	}
+	if len(executor.lastReq.Roots) != 1 || executor.lastReq.Roots[0] != dirs[1] {
+		t.Fatalf("additional roots must keep order: %+v", executor.lastReq.Roots)
+	}
+}
+
+func TestActivityMissingUnitDirectoryReturnsError(t *testing.T) {
+	root := t.TempDir()
+	prepareUnitDirs(t, root, UnitRef{ProjectID: "project-1", UnitID: "unit-1"})
+
+	executor := &fakeExecutor{answer: OpenCodeAnswer{Text: "Готово"}}
+	acts := &Activities{WorkDir: root, OpenCode: executor}
+	cmd := validCommand()
+	cmd.Units = []UnitRef{
+		{ProjectID: "project-1", UnitID: "unit-1"},
+		{ProjectID: "project-1", UnitID: "unit-missing"},
+	}
+
+	result, err := acts.VipolnitHodOpenCodeActivity(context.Background(), cmd)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Kind != KindError || result.ErrorKey == nil || *result.ErrorKey != ErrorKeyUnitDirectoryNotFound {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if result.Questions == nil || len(result.Questions) != 0 {
+		t.Fatalf("questions must be an empty array: %#v", result.Questions)
+	}
+	if executor.calls != 0 {
+		t.Fatal("open code must not run when any unit directory is missing")
+	}
+}
+
+func TestActivityLegacyProjectUnitPair(t *testing.T) {
+	root := t.TempDir()
+	dirs := prepareUnitDirs(t, root, UnitRef{ProjectID: "project-1", UnitID: "unit-1"})
+
+	projectID, unitID := "project-1", "unit-1"
+	executor := &fakeExecutor{answer: OpenCodeAnswer{Text: "Готово"}}
+	acts := &Activities{WorkDir: root, OpenCode: executor}
+	cmd := validCommand()
+	cmd.ProjectID = &projectID
+	cmd.UnitID = &unitID
+
+	if _, err := acts.VipolnitHodOpenCodeActivity(context.Background(), cmd); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if executor.lastReq.WorkDir != dirs[0] {
+		t.Fatalf("legacy pair must resolve to the unit dir: got %q want %q", executor.lastReq.WorkDir, dirs[0])
+	}
+	if len(executor.lastReq.Roots) != 0 {
+		t.Fatalf("legacy pair must not add roots: %+v", executor.lastReq.Roots)
+	}
+}
+
+func TestResolveWorkDirsPrefersUnitsOverLegacy(t *testing.T) {
+	root := t.TempDir()
+	units := []UnitRef{{ProjectID: "project-2", UnitID: "unit-2"}}
+	dirs := prepareUnitDirs(t, root, units...)
+
+	projectID, unitID := "project-1", "unit-1"
+	acts := &Activities{WorkDir: root}
+	cmd := HodCommand{
+		Units:     units,
+		ProjectID: &projectID,
+		UnitID:    &unitID,
+	}
+
+	cwd, roots, err := acts.resolveWorkDirs(cmd)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cwd != dirs[0] || len(roots) != 0 {
+		t.Fatalf("Units must win over legacy fields: cwd=%q roots=%+v", cwd, roots)
+	}
+}
+
+func TestResolveWorkDirsWithoutUnitsUsesWorkRoot(t *testing.T) {
+	root := t.TempDir()
+	acts := &Activities{WorkDir: root}
+
+	cwd, roots, err := acts.resolveWorkDirs(validCommand())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cwd != root || len(roots) != 0 {
+		t.Fatalf("free session must work in runner root: cwd=%q roots=%+v", cwd, roots)
+	}
+}
+
+func TestResolveWorkDirsFreeSessionUsesProjectRoot(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "projects", "project-1")
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("cannot create project dir: %v", err)
+	}
+
+	projectID := "project-1"
+	acts := &Activities{WorkDir: root}
+
+	cwd, roots, err := acts.resolveWorkDirs(HodCommand{ProjectID: &projectID})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cwd != projectDir || len(roots) != 0 {
+		t.Fatalf("free session must work in project root: cwd=%q roots=%+v", cwd, roots)
+	}
+}
+
+func TestResolveWorkDirsRejectsPathTraversal(t *testing.T) {
+	root := t.TempDir()
+	acts := &Activities{WorkDir: root}
+
+	for _, unit := range []UnitRef{
+		{ProjectID: "..", UnitID: "unit-1"},
+		{ProjectID: "../escape", UnitID: "unit-1"},
+		{ProjectID: "project-1", UnitID: "../escape"},
+		{ProjectID: "project-1", UnitID: "nested/unit"},
+		{ProjectID: "", UnitID: "unit-1"},
+	} {
+		if _, _, err := acts.resolveWorkDirs(HodCommand{Units: []UnitRef{unit}}); err == nil {
+			t.Fatalf("expected error for unit %+v", unit)
+		}
+	}
+}
+
+func TestHodCommandDecodesBackendUnitPayload(t *testing.T) {
+	raw := `{
+		"SessionId": null,
+		"Prompt": "Поправь сборку",
+		"Answers": [],
+		"History": [],
+		"Url": "https://opencode.internal/api",
+		"Model": "gpt-5-codex",
+		"ApiKey": "sk-secret",
+		"Units": [
+			{"ProjectId": "project-1", "UnitId": "unit-1"},
+			{"ProjectId": "project-2", "UnitId": "unit-2"}
+		],
+		"ProjectId": "project-1",
+		"UnitId": "unit-1"
+	}`
+
+	var cmd HodCommand
+	if err := json.Unmarshal([]byte(raw), &cmd); err != nil {
+		t.Fatalf("cannot decode backend payload: %v", err)
+	}
+
+	if cmd.SessionID != "" {
+		t.Fatalf("null SessionId must decode into empty string: %q", cmd.SessionID)
+	}
+	if len(cmd.Units) != 2 ||
+		cmd.Units[0] != (UnitRef{ProjectID: "project-1", UnitID: "unit-1"}) ||
+		cmd.Units[1] != (UnitRef{ProjectID: "project-2", UnitID: "unit-2"}) {
+		t.Fatalf("units must keep order: %+v", cmd.Units)
+	}
+	if cmd.ProjectID == nil || *cmd.ProjectID != "project-1" {
+		t.Fatalf("legacy ProjectId was not decoded: %+v", cmd.ProjectID)
+	}
+	if cmd.UnitID == nil || *cmd.UnitID != "unit-1" {
+		t.Fatalf("legacy UnitId was not decoded: %+v", cmd.UnitID)
+	}
+}
+
 func TestHodCommandSerializationUsesArrays(t *testing.T) {
 	data, err := json.Marshal(HodCommand{})
 	if err != nil {
 		t.Fatalf("marshal failed: %v", err)
 	}
-	if !strings.Contains(string(data), `"Answers":[]`) || !strings.Contains(string(data), `"History":[]`) {
-		t.Fatalf("Answers/History must be []: %s", data)
+	if !strings.Contains(string(data), `"Answers":[]`) ||
+		!strings.Contains(string(data), `"History":[]`) ||
+		!strings.Contains(string(data), `"Units":[]`) {
+		t.Fatalf("Answers/History/Units must be []: %s", data)
 	}
 }
 

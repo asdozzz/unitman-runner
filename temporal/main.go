@@ -1,13 +1,18 @@
 package temporal
 
 import (
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/worker"
 	"log"
+	"net/http"
+	"os"
 	"runner/config"
+	opencodeActivity "runner/temporal/activity/opencode"
 	projectActivity "runner/temporal/activity/project"
 	"runner/temporal/activity/runner"
 	unitActivity "runner/temporal/activity/unit"
 	"runner/temporal/utils"
+	"time"
 )
 
 func Init(config config.Configuration) {
@@ -23,6 +28,27 @@ func Init(config config.Configuration) {
 
 	// This worker hosts both Workflow and Activity functions
 	w := worker.New(c, "unitman-runner-queue", worker.Options{})
+
+	backendURL := os.Getenv("RUNNER_BACKEND_URL")
+	if backendURL == "" {
+		backendURL = config.ApiHost
+	}
+	opencodeActs := &opencodeActivity.Activities{
+		BackendURL: backendURL,
+		Secret:     os.Getenv("RUNNER_CALLBACK_SECRET"),
+		// Прогресс — короткие запросы; у OpenCode свой дедлайн хода, поэтому
+		// общий Timeout клиента ему не подходит.
+		Client:   &http.Client{Timeout: 10 * time.Second},
+		OpenCode: opencodeActivity.NewCLIExecutor(),
+		// Корень раскладки юнитов (<root>/projects/<ProjectId>/units/<UnitId>).
+		// По умолчанию совпадает с рабочим каталогом раннера.
+		WorkDir: os.Getenv("RUNNER_WORK_DIR"),
+	}
+	w.RegisterActivityWithOptions(
+		opencodeActs.VipolnitHodOpenCodeActivity,
+		activity.RegisterOptions{Name: opencodeActivity.ActivityName},
+	)
+
 	w.RegisterActivity(projectActivity.InitProjectActivity)
 	w.RegisterActivity(projectActivity.RemoveProjectActivity)
 	w.RegisterActivity(unitActivity.NachatSborkuUnitaActivity)

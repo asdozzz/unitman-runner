@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
 	"strings"
@@ -29,17 +30,12 @@ func NachatUdalenieUnitaActivity(ctx context.Context, command NachatUdalenieUnit
 		Steps:   []model.Step{},
 	}
 
-	unixtimeStart := time.Now().Unix()
-	out, err := json.Marshal(command)
-	result.Steps = model.AddStepToSteps(result.Steps, "json.Marshal", "success", err, unixtimeStart)
-	if err != nil {
-		result.Success = 0
-		return result, nil
-	}
+	logCommand := command
+	logCommand.StorageUrl = RedactStorageURL(command.StorageUrl)
 
-	unixtimeStart = time.Now().Unix()
-	err = os.Setenv("UNITMAN_UNIT_NAME", command.Name)
-	result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_UNIT_NAME", "success", err, unixtimeStart)
+	unixtimeStart := time.Now().Unix()
+	out, err := json.Marshal(logCommand)
+	result.Steps = model.AddStepToSteps(result.Steps, "json.Marshal", "success", err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil
@@ -47,38 +43,58 @@ func NachatUdalenieUnitaActivity(ctx context.Context, command NachatUdalenieUnit
 
 	fmt.Println("NachatUdalenieUnita:" + string(out))
 
-	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
+	filepathUnit := "./projects/" + command.ProjectId + "/units/" + command.Id
 
-	args := []string{"docker", "compose", "exec", "-T", "unit", "sh", "-c", "pwd"}
-	unixtimeCheckStart := time.Now().Unix()
-	_, err = utils.ExecCommand(filepath, args)
-
-	unitIsRunning := true
+	currentPath, err := os.Getwd()
 	if err != nil {
-		if strings.Contains(err.Error(), "no such service") {
-			unitIsRunning = false
-		}
-
-		if strings.Contains(err.Error(), "is not running") {
-			unitIsRunning = false
-		}
-		result.Steps = model.AddStepToSteps(result.Steps, "check unit", "is not running", nil, unixtimeCheckStart)
+		result.Steps = model.AddStepToSteps(result.Steps, "Getwd", "", err, time.Now().Unix())
+		result.Success = 0
+		return result, nil
 	}
 
-	if unitIsRunning {
-		args = []string{"docker", "compose", "down", "-v"}
-		unixtimeStart = time.Now().Unix()
-		msg, err := utils.ExecCommand(filepath, args)
-		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
-		if err != nil {
-			result.Success = 0
-			return result, nil
-		}
-	}
+	unitPath := filepath.Join(currentPath, filepathUnit)
+	composeProjectName := ReadUnitEnvValue(unitPath, "COMPOSE_PROJECT_NAME")
 
 	unixtimeStart = time.Now().Unix()
-	err = os.RemoveAll(filepath)
-	result.Steps = model.AddStepToSteps(result.Steps, "remove unit directory", "success", err, unixtimeStart)
+	unitDirInfo, err := os.Stat(unitPath)
+	unitDirExists := err == nil && unitDirInfo.IsDir()
+	if err != nil && !os.IsNotExist(err) {
+		result.Steps = model.AddStepToSteps(result.Steps, "check unit dir", "", err, unixtimeStart)
+		result.Success = 0
+		return result, nil
+	}
+	result.Steps = model.AddStepToSteps(result.Steps, "check unit dir", "", nil, unixtimeStart)
+
+	if unitDirExists {
+		composePath := filepath.Join(unitPath, "compose.yaml")
+		envPath := filepath.Join(unitPath, ".env")
+
+		if _, errCompose := os.Stat(composePath); errCompose == nil {
+			if _, errEnv := os.Stat(envPath); errEnv == nil {
+				args := []string{"docker", "compose", "down", "-v"}
+				unixtimeStart = time.Now().Unix()
+				msg, errDown := utils.ExecCommand(unitPath, args)
+				result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errDown, unixtimeStart)
+				if errDown != nil {
+					result.Success = 0
+					return result, nil
+				}
+			}
+		}
+	}
+
+	volumeSteps, err := RemoveUnitVolumes(currentPath, command.Id)
+	result.Steps = append(result.Steps, volumeSteps...)
+	if err != nil {
+		result.Success = 0
+		return result, nil
+	}
+
+	result.Steps = append(result.Steps, RemoveLegacyUnitVolumes(currentPath, composeProjectName)...)
+
+	unixtimeStart = time.Now().Unix()
+	err = os.RemoveAll(unitPath)
+	result.Steps = model.AddStepToSteps(result.Steps, "remove unit directory", "", err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil

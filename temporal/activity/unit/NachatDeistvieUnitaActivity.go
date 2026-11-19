@@ -6,7 +6,6 @@ import (
 	"go.temporal.io/sdk/activity"
 	"os"
 	"runner/temporal/activity/unit/model"
-	"runner/temporal/utils"
 	"strings"
 	"time"
 )
@@ -69,8 +68,8 @@ func NachatDeistvieUnitaActivity(ctx context.Context, command NachatZapuskUnita)
 		for _, variableItem := range command.Variables {
 			commandStringAfteReplace = strings.Replace(commandStringAfteReplace, "${UNITMAN_ACTION_"+variableItem.Id+"}", variableItem.Value, 1)
 		}
-		args := []string{"docker", "compose", "exec", "-T", "unit", "sh", "-c", commandStringAfteReplace}
-		msg, errCommand := utils.ExecCommand(filepath, args)
+		args := UnitContainerCommand(commandStringAfteReplace)
+		msg, errCommand := ExecInUnitContainer(filepath, commandStringAfteReplace)
 		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand, unixtimeStart)
 		if errCommand != nil {
 			result.Success = 0

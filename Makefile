@@ -1,14 +1,29 @@
 start:
 	docker compose up -d
 	go build main.go
-	nohup ./main &
-stop:
-	docker compose down
-	kill -9 `pidof ./main` || true
-	rm -rf nohup.out
+	./main start
 
-dind-unit:
-	docker build -f DockerfileDind.dist -t asdozzz/dind-unit:latest . && docker push asdozzz/dind-unit:latest
+stop:
+	./main stop
+	docker compose down
+
+logs:
+	./main logs
+
+DIND_IMAGE ?= asdozzz/dind-unit:latest
+DIND_DOCKERFILE ?= Dockerfile.Dind
+
+dind-build:
+	docker build -f $(DIND_DOCKERFILE) -t $(DIND_IMAGE) .
+
+dind-push:
+	docker push $(DIND_IMAGE)
+
+# Собрать и отправить в registry dind-образ с OpenCode.
+dind: dind-build dind-push
+
+# Совместимый алиас для существующих скриптов и IDE-конфигураций.
+dind-unit: dind
 
 podman-unit:
 	docker build -f Dockerfile.dist -t asdozzz/unitman-unit:latest . && docker push asdozzz/unitman-unit:latest

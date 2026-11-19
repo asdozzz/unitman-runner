@@ -2,35 +2,33 @@ services:
   unit:
     container_name: ${UNITMAN_UNIT_NAME}.${UNITMAN_PROJECT_NAME}
     runtime: sysbox-runc
-    build:
-      context: .
+    image: asdozzz/dind-unit:latest
     mem_limit: ${UNITMAN_MEMORY_LIMIT:-3g}
     memswap_limit: ${UNITMAN_MEMORY_LIMIT:-3g}
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        rm -f /var/run/docker.pid /var/run/docker.sock
-        dockerd \
-          --host=unix:///var/run/docker.sock \
-          --registry-mirror=http://unitman-registry:5000 \
-          --insecure-registry=unitman-registry:5000 \
-          --storage-driver=overlay2 \
-          --max-concurrent-downloads=10 \
-          --max-concurrent-uploads=10 \
-          --mtu=1400 >/var/log/dockerd.log 2>&1 &
-        exec sleep infinity
+    stop_grace_period: 30s
     healthcheck:
-      test: [ "CMD-SHELL", "test -S /var/run/docker.sock && docker info >/dev/null 2>&1" ]
+      test: [ "CMD-SHELL", "test -f /tmp/.app_ready && test -S /var/run/docker.sock && docker info >/dev/null 2>&1" ]
       interval: 0.2s
       timeout: 1s
-      retries: 25
+      retries: 50
       start_period: 0.1s
+    working_dir: /app
     volumes:
+      - unit_app:/app
       - unit_docker_data:/var/lib/docker
+      # Read-only источник для первичного seed git. Рабочая копия живёт в unit_app.
+      - ../../mainBranch/.git:/seed/git:ro
+      # Staging вложений, которые подготовил runner.
+      - ./seed:/seed:ro
+
 
 volumes:
+  unit_app:
+    external: true
+    name: ${UNITMAN_UNIT_APP_VOLUME}
   unit_docker_data:
+    external: true
+    name: ${UNITMAN_UNIT_DOCKER_VOLUME}
 
 networks:
   default:

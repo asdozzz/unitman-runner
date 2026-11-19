@@ -3,16 +3,15 @@ package unit
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"go.temporal.io/sdk/activity"
-	"log"
 	"os"
+	"path/filepath"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
 	"strings"
-	"text/template"
 	"time"
+
+	"go.temporal.io/sdk/activity"
 )
 
 type ContainerSettings struct {
@@ -62,7 +61,10 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		ResponseId: activity.GetInfo(ctx).WorkflowExecution.ID,
 	}
 
-	out, err := json.Marshal(command)
+	logCommand := command
+	logCommand.StorageUrl = RedactStorageURL(command.StorageUrl)
+
+	out, err := json.Marshal(logCommand)
 	if err != nil {
 		fmt.Println(err)
 		result.Success = 0
@@ -71,227 +73,150 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 
 	fmt.Println("ResultatPodgotovkiUnita:" + string(out))
 
-	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
+	filepathUnit := "./projects/" + command.ProjectId + "/units/" + command.Id
 
 	currentPath, err := os.Getwd()
 	if err != nil {
-		fmt.Println(err)
+		result.Steps = model.AddStepToSteps(result.Steps, "Getwd", "", err, time.Now().Unix())
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil
 	}
 
-	filepath = currentPath + "/" + filepath
+	unitPath := filepath.Join(currentPath, filepathUnit)
 
-	err = os.Setenv("UNITMAN_PROJECT_NAME", command.ProjectName)
+	unixtimeStart := time.Now().Unix()
+	err = os.MkdirAll(unitPath, os.ModePerm)
+	result.Steps = model.AddStepToSteps(result.Steps, "MkdirAll unit dir", unitPath, err, unixtimeStart)
 	if err != nil {
-		fmt.Println(err)
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil
 	}
 
-	err = os.Setenv("UNITMAN_UNIT_NAME", command.Name)
+	fileSteps, err := PrepareUnitFiles(unitPath, command.ImageConfig)
+	result.Steps = append(result.Steps, fileSteps...)
 	if err != nil {
-		fmt.Println(err)
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil
 	}
 
-	err = os.Setenv("UNITMAN_BRANCH_NAME", command.Branch)
+	unixtimeStart = time.Now().Unix()
+	err = EnsureUnitSeedDir(unitPath)
+	result.Steps = model.AddStepToSteps(result.Steps, "mkdir unit seed dir", "", err, unixtimeStart)
 	if err != nil {
-		fmt.Println(err)
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil
 	}
 
-	err = os.Setenv("UNITMAN_UNIT_IMAGE_NAME", command.ImageConfig.Image)
-	if err != nil {
-		fmt.Println(err)
-		result.Success = 0
-		return wrapResultatPogotovki(result), nil
-	}
-
-	err = os.Setenv("UNITMAN_CACHE_REPO", "host.units:5000")
-	if err != nil {
-		fmt.Println(err)
-		result.Success = 0
-		return wrapResultatPogotovki(result), nil
-	}
-
-	err = os.Setenv("UNITMAN_MEMORY_LIMIT", command.ContainerSettings.MemoryLimit)
-	if err != nil {
-		fmt.Println(err)
-		result.Success = 0
-		return wrapResultatPogotovki(result), nil
-	}
-
-	err = os.Setenv("PODMAN_COMPOSE_IN_POD", "false")
-	if err != nil {
-		fmt.Println(err)
-		result.Success = 0
-		return wrapResultatPogotovki(result), nil
-	}
-
-	envFilePath := filepath + "/.env"
-
-	if _, err := os.Stat(envFilePath); errors.Is(err, os.ErrNotExist) {
-		envFilePath = filepath + "/.env.unit"
-	}
-
-	err = os.Truncate(envFilePath, 0)
-	if err != nil {
-		fmt.Println(err)
-		result.Success = 0
-		return wrapResultatPogotovki(result), nil
-	}
-
-	f, err := os.OpenFile(envFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		fmt.Println(err)
-		result.Success = 0
-		return wrapResultatPogotovki(result), nil
-	}
-	defer func(f *os.File) {
-		err := f.Close()
-		if err != nil {
-			log.Fatal(err)
-		}
-	}(f)
-
-	_, err = f.Write([]byte("UNITMAN_UNIT_NAME=" + command.Name + "\n"))
-	if err != nil {
-		fmt.Println(err)
-		result.Success = 0
-		return wrapResultatPogotovki(result), nil
-	}
-
-	_, err = f.Write([]byte("UNITMAN_PROJECT_NAME=" + command.ProjectName + "\n"))
-	if err != nil {
-		fmt.Println(err)
-		result.Success = 0
-		return wrapResultatPogotovki(result), nil
-	}
-
-	_, err = f.Write([]byte("UNITMAN_BRANCH_NAME=" + command.Branch + "\n"))
-	if err != nil {
-		fmt.Println(err)
-		result.Success = 0
-		return wrapResultatPogotovki(result), nil
-	}
-
-	_, err = f.Write([]byte("UNITMAN_UNIT_IMAGE_NAME=" + command.ImageConfig.Image + "\n"))
-	if err != nil {
-		fmt.Println(err)
-		result.Success = 0
-		return wrapResultatPogotovki(result), nil
-	}
-
-	_, err = f.Write([]byte("COMPOSE_PROJECT_NAME=" + command.Name + "_" + command.ProjectName + "\n"))
-	if err != nil {
-		fmt.Println(err)
-		result.Success = 0
-		return wrapResultatPogotovki(result), nil
-	}
-
-	_, err = f.Write([]byte("PODMAN_COMPOSE_IN_POD=false" + "\n"))
-	if err != nil {
-		fmt.Println(err)
-		result.Success = 0
-		return wrapResultatPogotovki(result), nil
+	volumes := UnitVolumes(command.Id)
+	envEntries := [][2]string{
+		{"UNITMAN_UNIT_ID", command.Id},
+		{"UNITMAN_UNIT_NAME", command.Name},
+		{"UNITMAN_PROJECT_NAME", command.ProjectName},
+		{"UNITMAN_BRANCH_NAME", command.Branch},
+		{"UNITMAN_UNIT_IMAGE_NAME", command.ImageConfig.Image},
+		{"COMPOSE_PROJECT_NAME", command.Name + "_" + command.ProjectName},
+		{"UNITMAN_UNIT_APP_VOLUME", volumes.App},
+		{"UNITMAN_UNIT_DOCKER_VOLUME", volumes.Docker},
+		{"UNITMAN_UNIT_CONTAINERS_VOLUME", volumes.Containers},
+		{"UNITMAN_MEMORY_LIMIT", command.ContainerSettings.MemoryLimit},
+		{"UNITMAN_CACHE_REPO", "host.units:5000"},
 	}
 
 	for _, variableItem := range command.Variables {
-		unixtimeStart := time.Now().Unix()
-		_, err = f.Write([]byte("UNITMAN_" + variableItem.Id + "=" + variableItem.Value + "\n"))
-		result.Steps = model.AddStepToSteps(result.Steps, "Setenv UNITMAN_"+variableItem.Id, "success", err, unixtimeStart)
-		if err != nil {
-			fmt.Println(err)
-			result.Success = 0
-			return wrapResultatPogotovki(result), nil
-		}
-	}
-
-	unixtimeStart := time.Now().Unix()
-	readyTemplate, err := template.ParseFiles(filepath + "/Dockerfile.temp")
-
-	if err != nil {
-		result.Steps = model.AddStepToSteps(result.Steps, "parse Dockerfile template", "fail", err, unixtimeStart)
-		result.Success = 0
-		return result, nil
+		envEntries = append(envEntries, [2]string{"UNITMAN_" + variableItem.Id, variableItem.Value})
 	}
 
 	unixtimeStart = time.Now().Unix()
-	outputFile, err := os.Create(filepath + "/Dockerfile")
-
+	err = WriteUnitEnvFile(unitPath, envEntries)
+	result.Steps = model.AddStepToSteps(result.Steps, "write .env", "", err, unixtimeStart)
 	if err != nil {
-		result.Steps = model.AddStepToSteps(result.Steps, "make Dockerfile", "fail", err, unixtimeStart)
 		result.Success = 0
-		return result, nil
-	}
-	defer outputFile.Close()
-
-	unixtimeStart = time.Now().Unix()
-	err = readyTemplate.Execute(outputFile, command.ImageConfig)
-	if err != nil {
-		result.Steps = model.AddStepToSteps(result.Steps, "generate text for Dockerfile", "success", err, unixtimeStart)
-		result.Success = 0
-		return result, nil
+		return wrapResultatPogotovki(result), nil
 	}
 
-	composeFile := "compose.dind.yaml"
-	if command.ImageConfig.Image == "asdozzz/unitman-unit:latest" {
-		composeFile = "compose.podman.yaml"
-	}
-
-	unixtimeStart = time.Now().Unix()
-	err = CopyFileContents(filepath+"/"+composeFile, filepath+"/compose.yaml")
-	if err != nil {
-		result.Steps = model.AddStepToSteps(result.Steps, "make compose.yaml by image name", "success", err, unixtimeStart)
-		return nil, err
-	}
-
-	// Тома готовятся до сборки образа: Dockerfile копирует ./app в /app,
-	// поэтому распакованные архивы попадают в контейнер вместе с кодом.
-	volumeSteps, errVolumes := PrepareVolumes(filepath, command.Volumes)
+	volumeSteps, err := EnsureUnitVolumes(unitPath, command.Id)
 	result.Steps = append(result.Steps, volumeSteps...)
-	if errVolumes != nil {
+	if err != nil {
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil
 	}
 
 	args := []string{"docker", "compose", "up", "-d", "--build"}
 	unixtimeStart = time.Now().Unix()
-	msg, err := utils.ExecCommand(filepath, args)
+	msg, err := utils.ExecCommand(unitPath, args)
 	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil
 	}
 
-	RestoreCache(command.ProjectName, command.Name, command.ProjectId, command.Id, command.Caches)
-	//RestoreImages(command.ProjectId, command.Id)
-	/*for i := 0; i < 15; i++ {
-		args := []string{"docker", "compose", "exec", "-T", "unit", "sh", "-c", "docker info"}
-		_, err = utils.ExecCommand(filepath, args)
-		if err == nil {
-			break
-		} else {
-			time.Sleep(500 * time.Millisecond)
+	unixtimeStart = time.Now().Unix()
+	err = WaitUnitReady(unitPath)
+	result.Steps = model.AddStepToSteps(result.Steps, "wait unit ready", "", err, unixtimeStart)
+	if err != nil {
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
+	}
+
+	unixtimeStart = time.Now().Unix()
+	msg, err = SyncUnitRepo(unitPath, command.Branch, command.StorageUrl)
+	result.Steps = model.AddStepToSteps(result.Steps, "unit-repo-sync branch="+command.Branch, msg, err, unixtimeStart)
+	if err != nil {
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
+	}
+
+	volumeSteps, stagedVolumes, err := PrepareVolumes(unitPath, command.Volumes, func(dir string) (bool, error) {
+		return UnitVolumeSeeded(unitPath, dir)
+	})
+	result.Steps = append(result.Steps, volumeSteps...)
+	if err != nil {
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
+	}
+
+	if stagedVolumes > 0 {
+		unixtimeStart = time.Now().Unix()
+		msg, err = SyncUnitVolumes(unitPath)
+		result.Steps = model.AddStepToSteps(result.Steps, "unit-volumes-sync", msg, err, unixtimeStart)
+		if err != nil {
+			result.Success = 0
+			return wrapResultatPogotovki(result), nil
 		}
-	}*/
+	}
+
+	unixtimeStart = time.Now().Unix()
+	err = RemoveLegacyHostApp(unitPath)
+	result.Steps = model.AddStepToSteps(result.Steps, "remove legacy host app", "", err, unixtimeStart)
+	if err != nil {
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
+	}
+
+	RestoreCache(command.ProjectName, command.Name, command.ProjectId, command.Id, command.Caches)
 
 	for _, commandString := range command.Commands {
-		//commandArgs := strings.Split(commandString, " ")
-		args := []string{"docker", "compose", "exec", "-T", "unit", "sh", "-c", commandString}
+		args := UnitContainerCommand(commandString)
 		unixtimeStart := time.Now().Unix()
-		msg, errCommand := utils.ExecCommand(filepath, args)
+		msg, errCommand := ExecInUnitContainer(unitPath, commandString)
 		result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, errCommand, unixtimeStart)
 		if errCommand != nil {
 			result.Success = 0
 			return wrapResultatPogotovki(result), nil
-		} else {
-			wrapPodgotovkaSaveStepsToMono(result)
 		}
+
+		wrapPodgotovkaSaveStepsToMono(result)
 	}
+
+	unixtimeStart = time.Now().Unix()
+	unitConfig, err := ReadUnitConfig(unitPath)
+	result.Steps = model.AddStepToSteps(result.Steps, "read unitman.yaml", "", err, unixtimeStart)
+	if err != nil {
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
+	}
+
+	result.Config = unitConfig
 
 	return wrapResultatPogotovkiSuccess(result), nil
 }

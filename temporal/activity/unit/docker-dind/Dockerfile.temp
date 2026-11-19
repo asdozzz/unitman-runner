@@ -1,8 +1,15 @@
-FROM {{.Image}}
-{{ range .Commands }}
-RUN {{ . }}
-{{ end }}
+FROM asdozzz/dind-unit:latest
 
-WORKDIR /app
+# Git нужен для операций внутри юнита: seed, update, commit и push.
+RUN apk add --no-cache git
 
-COPY ./app /app
+COPY entrypoint.sh /usr/local/bin/unit-entrypoint.sh
+COPY unit-repo-sync.sh /usr/local/bin/unit-repo-sync
+COPY unit-volumes-sync.sh /usr/local/bin/unit-volumes-sync
+
+RUN chmod +x \
+    /usr/local/bin/unit-entrypoint.sh \
+    /usr/local/bin/unit-repo-sync \
+    /usr/local/bin/unit-volumes-sync
+
+ENTRYPOINT ["/usr/local/bin/unit-entrypoint.sh"]

@@ -21,11 +21,17 @@ type OpenCodeExecutor interface {
 }
 
 // OpenCodeRequest — один запрос в OpenCode.
+//
+// WorkDir — рабочий каталог хода (cwd), Roots — дополнительные корни
+// workspace (multi-root). HTTP-клиент передаёт их в системном сообщении,
+// чтобы модель работала только внутри разрешённых каталогов юнитов.
 type OpenCodeRequest struct {
 	SessionID string
 	URL       string
 	Model     string
 	APIKey    string
+	WorkDir   string
+	Roots     []string
 	Messages  []Replika
 }
 
@@ -86,7 +92,7 @@ func (e *HTTPExecutor) Execute(ctx context.Context, req OpenCodeRequest) (OpenCo
 
 	payload := chatRequest{
 		Model:      req.Model,
-		Messages:   buildChatMessages(req.Messages),
+		Messages:   buildChatMessagesWithPrompt(systemPromptFor(req.WorkDir, req.Roots), req.Messages),
 		Tools:      []tool{askUserTool()},
 		ToolChoice: "auto",
 	}
@@ -222,8 +228,12 @@ type chatRequest struct {
 }
 
 func buildChatMessages(messages []Replika) []chatMessage {
+	return buildChatMessagesWithPrompt(systemPrompt, messages)
+}
+
+func buildChatMessagesWithPrompt(prompt string, messages []Replika) []chatMessage {
 	out := make([]chatMessage, 0, len(messages)+1)
-	out = append(out, chatMessage{Role: "system", Content: systemPrompt})
+	out = append(out, chatMessage{Role: "system", Content: prompt})
 
 	for _, message := range messages {
 		role := strings.ToLower(strings.TrimSpace(message.Role))
@@ -237,6 +247,38 @@ func buildChatMessages(messages []Replika) []chatMessage {
 	}
 
 	return out
+}
+
+// systemPromptFor дополняет системный промпт рамками workspace: модель должна
+// работать только в каталогах привязанных к сессии юнитов.
+func systemPromptFor(workDir string, roots []string) string {
+	workDir = strings.TrimSpace(workDir)
+	if workDir == "" {
+		return systemPrompt
+	}
+
+	var builder strings.Builder
+	builder.WriteString(systemPrompt)
+	builder.WriteString("\n\nРабочий каталог хода: ")
+	builder.WriteString(workDir)
+	builder.WriteString(".\nРаботай только внутри этого каталога")
+	if len(roots) > 0 {
+		builder.WriteString(" и перечисленных корней workspace")
+	}
+	builder.WriteString(". Не читай и не изменяй файлы за их пределами.")
+
+	if len(roots) > 0 {
+		builder.WriteString("\nДополнительные корни workspace: ")
+		for i, root := range roots {
+			if i > 0 {
+				builder.WriteString(", ")
+			}
+			builder.WriteString(root)
+		}
+		builder.WriteString(".")
+	}
+
+	return builder.String()
 }
 
 func askUserTool() tool {

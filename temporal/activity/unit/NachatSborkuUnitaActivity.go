@@ -4,9 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
-	"path"
+	"path/filepath"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
 	"strings"
@@ -42,111 +41,52 @@ func NachatSborkuUnitaActivity(ctx context.Context, command NachatSborkuUnita) (
 		return result, nil
 	}
 
-	err = os.Setenv("UNITMAN_UNIT_NAME", command.Name)
+	if strings.TrimSpace(command.Branch) == "" {
+		result.Steps = model.AddStepToSteps(result.Steps, "check branch", "", fmt.Errorf("не задана ветка юнита"), time.Now().Unix())
+		result.Success = 0
+		return result, nil
+	}
+
+	filepathUnit := "./projects/" + command.ProjectId + "/units/" + command.Id
+	filepathProject := "./projects/" + command.ProjectId + "/mainBranch"
+
+	unixtimeStart = time.Now().Unix()
+	err = os.MkdirAll(filepathUnit, os.ModePerm)
+	result.Steps = model.AddStepToSteps(result.Steps, "MkdirAll unit dir", filepathUnit, err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil
 	}
 
-	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
-	unixtimeStart = time.Now().Unix()
-	err = os.MkdirAll(filepath, os.ModePerm)
-	result.Steps = model.AddStepToSteps(result.Steps, "MkdirAll", "success", err, unixtimeStart)
-	if err != nil {
-		result.Success = 0
-		return result, nil
-	}
-
-	unixtimeStart = time.Now().Unix()
-	dir, err := ioutil.ReadDir(filepath)
-	result.Steps = model.AddStepToSteps(result.Steps, "ReadDir", "success", err, unixtimeStart)
-	if err != nil {
-		result.Success = 0
-		return result, nil
-	}
-
-	for _, d := range dir {
-		item := path.Join([]string{filepath, d.Name()}...)
-		fmt.Println("item:" + item)
-		unixtimeStart = time.Now().Unix()
-		err = os.RemoveAll(item)
-		if err != nil {
-			result.Steps = model.AddStepToSteps(result.Steps, "remove child item "+item, "success", err, unixtimeStart)
-			result.Success = 0
-			return result, nil
-		}
-	}
-
-	unixtimeStart = time.Now().Unix()
 	currentPath, err := os.Getwd()
-	result.Steps = model.AddStepToSteps(result.Steps, "Getwd", "success", err, unixtimeStart)
 	if err != nil {
+		result.Steps = model.AddStepToSteps(result.Steps, "Getwd", "", err, time.Now().Unix())
 		result.Success = 0
 		return result, nil
 	}
 
-	unitPath := currentPath + "/" + filepath
-	dockerFilesPath := currentPath + "/temporal/activity/unit/docker-dind/."
-	args := []string{"cp", "-R", dockerFilesPath, unitPath}
+	projectPath := filepath.Join(currentPath, filepathProject)
+	branchRef := "refs/remotes/origin/" + command.Branch
+
 	unixtimeStart = time.Now().Unix()
-	msg, err := utils.ExecCommand(filepath, args)
+	args := []string{"git", "fetch", "--prune", "origin", "+refs/heads/" + command.Branch + ":" + branchRef}
+	msg, err := utils.ExecCommand(projectPath, args)
 	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil
 	}
 
-	appPath := currentPath + "/" + filepath + "/app"
-	mainBranchPath := currentPath + "/projects/" + command.ProjectId + "/mainBranch/."
-	args = []string{"cp", "-R", mainBranchPath, appPath}
 	unixtimeStart = time.Now().Unix()
-	msg, err = utils.ExecCommand(filepath, args)
-	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
+	configCommand := "if git cat-file -e " + branchRef + ":unitman.yaml 2>/dev/null; then git show " + branchRef + ":unitman.yaml; fi"
+	configOutput, err := utils.ExecCommand(projectPath, []string{"sh", "-c", configCommand})
+	result.Steps = model.AddStepToSteps(result.Steps, configCommand, configOutput, err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil
 	}
 
-	args = []string{"git", "reset", "--hard"}
-	unixtimeStart = time.Now().Unix()
-	msg, err = utils.ExecCommand(appPath, args)
-	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
-	if err != nil {
-		result.Success = 0
-		return result, nil
-	}
-
-	args = []string{"git", "remote", "set-url", "origin", command.StorageUrl}
-	unixtimeStart = time.Now().Unix()
-	msg, err = utils.ExecCommand(appPath, args)
-	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
-	if err != nil {
-		result.Success = 0
-		return result, nil
-	}
-
-	args = []string{"git", "fetch", "--all"}
-	unixtimeStart = time.Now().Unix()
-	msg, err = utils.ExecCommand(appPath, args)
-	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
-	if err != nil {
-		result.Success = 0
-		return result, nil
-	}
-
-	args = []string{"git", "checkout", "-B", command.Branch, "origin/" + command.Branch}
-	unixtimeStart = time.Now().Unix()
-	msg, err = utils.ExecCommand(appPath, args)
-	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
-	if err != nil {
-		result.Success = 0
-		return result, nil
-	}
-
-	b, _ := os.ReadFile(appPath + "/unitman.yaml") // just pass the file name
-	if b != nil {
-		result.Config = string(b)
-	}
+	result.Config = configOutput
 
 	return result, nil
 }

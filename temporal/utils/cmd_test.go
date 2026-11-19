@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -67,5 +68,20 @@ func TestExecCommandStdinIsClosed(t *testing.T) {
 
 	if !strings.Contains(out, "read-exit:1") {
 		t.Fatalf("stdin should be closed, got output: %q", out)
+	}
+}
+
+func TestExecCommandContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	started := time.Now()
+	_, err := ExecCommandContext(ctx, t.TempDir(), []string{"sh", "-c", "sleep 10"})
+	if err == nil {
+		t.Fatal("expected cancellation error")
+	}
+
+	if time.Since(started) >= 5*time.Second {
+		t.Fatalf("command was not interrupted by context cancellation")
 	}
 }

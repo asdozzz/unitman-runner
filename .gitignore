@@ -3,5 +3,6 @@ projects/
 /logs.txt
 /main
 /config.json
+/runner.log
+/runner.pid
 register_data
-nohup.out

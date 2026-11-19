@@ -240,3 +240,45 @@ func TestBuildChatMessages(t *testing.T) {
 		t.Fatalf("unexpected roles: %+v", messages)
 	}
 }
+
+func TestHTTPExecutorSendsWorkspaceRoots(t *testing.T) {
+	const (
+		workDir = "/runner/projects/project-1/units/unit-1"
+		root    = "/runner/projects/project-1/units/unit-2"
+	)
+
+	var system string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload chatRequest
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("cannot decode request: %v", err)
+		}
+		if len(payload.Messages) == 0 || payload.Messages[0].Role != "system" {
+			t.Errorf("system message is missing: %+v", payload.Messages)
+		} else {
+			system = payload.Messages[0].Content
+		}
+
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"Готово"}}]}`)
+	}))
+	defer server.Close()
+
+	executor := NewHTTPExecutor(server.Client())
+	_, err := executor.Execute(context.Background(), OpenCodeRequest{
+		URL:     server.URL,
+		Model:   "model",
+		APIKey:  "key",
+		WorkDir: workDir,
+		Roots:   []string{root},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(system, workDir) || !strings.Contains(system, root) {
+		t.Fatalf("workspace roots are not passed to the model: %q", system)
+	}
+	if !strings.Contains(system, "только внутри") {
+		t.Fatalf("workspace restriction is not passed to the model: %q", system)
+	}
+}

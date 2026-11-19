@@ -1,7 +1,15 @@
+# OpenCode CLI: официальный образ содержит готовый бинарник под musl,
+# поэтому забираем его отдельным stage и копируем в dind-образ.
+FROM ghcr.io/anomalyco/opencode:latest AS opencode
+
 FROM docker:dind
 
 RUN apk add --no-cache openssl
 RUN apk add --no-cache gettext-envsubst
+# Зависимости OpenCode CLI, git для операций внутри юнита и базовые утилиты.
+RUN apk add --no-cache bash ripgrep libstdc++ libgcc git
+
+COPY --from=opencode /usr/local/bin/opencode /usr/local/bin/opencode
 
 # 1. Создаем обертку для podman -> docker
 RUN echo '#!/bin/sh' > /usr/local/bin/podman && \
@@ -12,3 +20,14 @@ RUN echo '#!/bin/sh' > /usr/local/bin/podman && \
 RUN echo '#!/bin/sh' > /usr/local/bin/podman-compose && \
     echo 'exec docker compose "$@"' >> /usr/local/bin/podman-compose && \
     chmod +x /usr/local/bin/podman-compose
+
+COPY temporal/activity/unit/docker-dind/entrypoint.sh /usr/local/bin/unit-entrypoint.sh
+COPY temporal/activity/unit/docker-dind/unit-repo-sync.sh /usr/local/bin/unit-repo-sync
+COPY temporal/activity/unit/docker-dind/unit-volumes-sync.sh /usr/local/bin/unit-volumes-sync
+
+RUN chmod +x \
+    /usr/local/bin/unit-entrypoint.sh \
+    /usr/local/bin/unit-repo-sync \
+    /usr/local/bin/unit-volumes-sync
+
+ENTRYPOINT ["/usr/local/bin/unit-entrypoint.sh"]
