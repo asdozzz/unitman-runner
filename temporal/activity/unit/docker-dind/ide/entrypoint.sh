@@ -7,7 +7,15 @@ PROJECT_DIR="/home/coder/project"
 SETTINGS_SOURCE="/opt/unitman-ide/settings.json"
 GIT_INDEX_TARGET="/tmp/git-index"
 
-mkdir -p "$DATA_DIR/User" "$EXTENSIONS_DIR"
+# Корневая ФС read-only, поэтому XDG-каталоги (config/data/cache) уводим
+# в tmpfs. Иначе code-server падает на старте:
+# ENOENT: no such file or directory, mkdir '/home/coder/.config'.
+export XDG_CONFIG_HOME="/tmp/code-server-xdg/config"
+export XDG_DATA_HOME="/tmp/code-server-xdg/data"
+export XDG_CACHE_HOME="/tmp/code-server-xdg/cache"
+
+mkdir -p "$DATA_DIR/User" "$EXTENSIONS_DIR" \
+    "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
 
 # Корневая ФС read-only, поэтому настройки копируются в tmpfs.
 cp "$SETTINGS_SOURCE" "$DATA_DIR/User/settings.json"

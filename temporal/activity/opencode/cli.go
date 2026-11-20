@@ -16,6 +16,8 @@ const (
 	// unitContainerAppDir — каталог приложения внутри контейнера юнита
 	// (Dockerfile юнита копирует ./app в /app).
 	unitContainerAppDir = "/app"
+	// workspaceContainerDir — корень workspace внутри его контейнера.
+	workspaceContainerDir = "/workspace"
 )
 
 // CLIExecutor выполняет ход через установленный в контейнере юнита OpenCode
@@ -73,7 +75,7 @@ func (e *CLIExecutor) execute(ctx context.Context, req OpenCodeRequest, continue
 
 	command := cliCommand(req, continueSession)
 	opts := unit.UnitExecOptions{
-		WorkDir: unitContainerAppDir,
+		WorkDir: containerWorkDir(req),
 		Env: []string{
 			"OPENCODE_CONFIG_CONTENT=" + config,
 			"OPENCODE_DISABLE_AUTOUPDATE=1",
@@ -125,7 +127,7 @@ func cliCommand(req OpenCodeRequest, continueSession bool) string {
 		"--format", "json",
 		"--auto",
 		"--model", cliProviderID + "/" + cliModelAlias,
-		"--dir", unitContainerAppDir,
+		"--dir", containerWorkDir(req),
 	}
 	if continueSession && strings.TrimSpace(req.SessionID) != "" {
 		args = append(args, "--session", req.SessionID)
@@ -135,6 +137,15 @@ func cliCommand(req OpenCodeRequest, continueSession bool) string {
 	return strings.Join(args, " ")
 }
 
+// containerWorkDir выбирает каталог opencode CLI: /workspace для workspace,
+// /app — для юнита.
+func containerWorkDir(req OpenCodeRequest) string {
+	if req.Workspace {
+		return workspaceContainerDir
+	}
+	return unitContainerAppDir
+}
+
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
@@ -142,6 +153,14 @@ func shellQuote(value string) string {
 // cliPrompt собирает сообщение для CLI. При продолжении сессии OpenCode уже
 // хранит историю, поэтому отправляем только текущую реплику.
 func cliPrompt(req OpenCodeRequest, continueSession bool) string {
+	prompt := cliPromptBase(req, continueSession)
+	if req.ReadOnly {
+		prompt += "\n\n" + cliReadOnlyInstruction
+	}
+	return prompt
+}
+
+func cliPromptBase(req OpenCodeRequest, continueSession bool) string {
 	messages := req.Messages
 	if len(messages) == 0 {
 		return cliQuestionInstruction
@@ -183,6 +202,9 @@ func cliPrompt(req OpenCodeRequest, continueSession bool) string {
 const cliQuestionInstruction = `Если для продолжения действительно нужен выбор или уточнение пользователя, не выполняй действие и верни строго один JSON-объект без пояснений и markdown:
 {"questions":[{"id":"q1","text":"текст вопроса","allowFreeText":true,"options":[{"id":"o1","label":"вариант","description":"пояснение"}]}]}
 Если вопрос допускает свободный ответ, установи allowFreeText = true.`
+
+// cliReadOnlyInstruction добавляется для workspace с read-only доступом.
+const cliReadOnlyInstruction = `Workspace работает в режиме read-only: запрещено выполнять git commit и git push. Можно менять файлы в рабочей копии, но нельзя создавать коммиты и отправлять их в удалённый репозиторий.`
 
 type cliConfig struct {
 	Provider map[string]cliProvider `json:"provider"`

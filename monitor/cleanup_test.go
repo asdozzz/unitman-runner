@@ -38,8 +38,8 @@ func TestRunCleanupPrunesImagesAndBuilderOnly(t *testing.T) {
 		t.Fatal("RunCleanup did not stop after context cancel")
 	}
 
-	if len(lines) < 2 {
-		t.Fatalf("expected at least 2 docker invocations, got %d: %v", len(lines), lines)
+	if len(lines) != 2 {
+		t.Fatalf("expected exactly 2 docker invocations, got %d: %v", len(lines), lines)
 	}
 
 	if lines[0] != "image prune -af" {
@@ -49,12 +49,56 @@ func TestRunCleanupPrunesImagesAndBuilderOnly(t *testing.T) {
 		t.Errorf("second command = %q, want %q", lines[1], "builder prune -af")
 	}
 
+	// Cleanup хостового Docker не должен трогать контейнеры и тома:
+	// остановленные контейнеры и их данные переживают очистку.
+	forbidden := []string{
+		"container prune",
+		"volume prune",
+		"system prune",
+		"--volumes",
+		"docker rm",
+		"docker volume rm",
+		"docker ps",
+	}
 	for _, line := range lines {
-		if strings.Contains(line, "--volumes") {
-			t.Errorf("cleanup must not prune volumes, got command %q", line)
+		for _, marker := range forbidden {
+			if strings.Contains(line, marker) {
+				t.Errorf("cleanup must not run %q, got command %q", marker, line)
+			}
 		}
-		if strings.Contains(line, "system prune") {
-			t.Errorf("cleanup must not run system prune, got command %q", line)
+	}
+}
+
+// TestCleanupDoesNotTouchStoppedContainersAndVolumes фиксирует, что cleanup
+// выполняет только image/builder prune: ни контейнеры (в том числе
+// остановленные), ни тома не удаляются.
+func TestCleanupDoesNotTouchStoppedContainersAndVolumes(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "docker.log")
+	t.Setenv("FAKE_DOCKER_LOG", logPath)
+	installFakeDocker(t, fakeDockerLogScript)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		RunCleanup(ctx, t.TempDir())
+	}()
+
+	lines := waitForLogLines(t, logPath, 2, 5*time.Second)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("RunCleanup did not stop after context cancel")
+	}
+
+	for _, line := range lines {
+		for _, forbidden := range []string{
+			"container", "volume", "system", "rm ", "ps ", "--volumes",
+		} {
+			if strings.Contains(line, forbidden) {
+				t.Fatalf("stopped containers and volumes must not be touched, got %q", line)
+			}
 		}
 	}
 }

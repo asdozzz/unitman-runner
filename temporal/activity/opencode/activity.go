@@ -72,6 +72,15 @@ type UnitRef struct {
 	UnitID    string `json:"UnitId"`
 }
 
+// WorkspaceProject — проект workspace-сессии. ProjectCode нужен бэкенду и
+// документации, а каталог вычисляется по ProjectId (как и у Proverit).
+type WorkspaceProject struct {
+	ProjectID   string `json:"ProjectId"`
+	ProjectName string `json:"ProjectName"`
+	ProjectCode string `json:"ProjectCode"`
+	CanPush     bool   `json:"CanPush"`
+}
+
 // HodCommand — payload активности. SessionId приходит как null на первом ходе
 // и разворачивается в пустую строку.
 //
@@ -90,6 +99,12 @@ type HodCommand struct {
 	Units     []UnitRef `json:"Units"`
 	ProjectID *string   `json:"ProjectId"`
 	UnitID    *string   `json:"UnitId"`
+
+	// WorkspaceID != "" переключает ход на workspace: cwd —
+	// <base>/workspaces/<WorkspaceID>, roots — подкаталоги проектов.
+	WorkspaceID       string             `json:"WorkspaceId"`
+	WorkspaceProjects []WorkspaceProject `json:"WorkspaceProjects"`
+	WorkspaceReadOnly bool               `json:"WorkspaceReadOnly"`
 }
 
 // MarshalJSON сохраняет массивы пустыми массивами, а не null: этого требует
@@ -104,6 +119,9 @@ func (c HodCommand) MarshalJSON() ([]byte, error) {
 	}
 	if c.Units == nil {
 		c.Units = []UnitRef{}
+	}
+	if c.WorkspaceProjects == nil {
+		c.WorkspaceProjects = []WorkspaceProject{}
 	}
 	return json.Marshal(plain(c))
 }
@@ -216,6 +234,8 @@ func (a *Activities) VipolnitHodOpenCodeActivity(ctx context.Context, cmd HodCom
 		WorkDir:   workDir,
 		Roots:     roots,
 		Messages:  sobratSoobsheniya(cmd),
+		Workspace: strings.TrimSpace(cmd.WorkspaceID) != "",
+		ReadOnly:  cmd.WorkspaceReadOnly,
 	})
 
 	if execErr != nil {
@@ -284,14 +304,19 @@ func sobratSoobsheniya(cmd HodCommand) []Replika {
 // workspace (multi-root), порядок юнитов сохраняется. Пустой Units означает
 // свободную сессию: работает в корне проекта, а без ProjectID — в корне раннера.
 func (a *Activities) resolveWorkDirs(cmd HodCommand) (cwd string, roots []string, err error) {
+	base := a.workRoot()
+
+	// Workspace имеет приоритет над Units/legacy-парой.
+	if strings.TrimSpace(cmd.WorkspaceID) != "" {
+		return a.resolveWorkspaceDirs(base, cmd)
+	}
+
 	units := cmd.Units
 
 	// Обратная совместимость со старыми бэкендами: пара верхнего уровня.
 	if len(units) == 0 && (cmd.ProjectID != nil || cmd.UnitID != nil) {
 		units = []UnitRef{{ProjectID: deref(cmd.ProjectID), UnitID: deref(cmd.UnitID)}}
 	}
-
-	base := a.workRoot()
 
 	if len(units) == 0 {
 		dir, err := a.checkDir(base)
@@ -309,6 +334,37 @@ func (a *Activities) resolveWorkDirs(cmd HodCommand) (cwd string, roots []string
 	}
 
 	return roots[0], roots[1:], nil
+}
+
+// resolveWorkspaceDirs вычисляет cwd и roots workspace-хода:
+// cwd = <base>/workspaces/<WorkspaceID>, roots = каталоги проектов.
+func (a *Activities) resolveWorkspaceDirs(base string, cmd HodCommand) (cwd string, roots []string, err error) {
+	workspaceID := strings.TrimSpace(cmd.WorkspaceID)
+	if !validPathSegment(workspaceID) {
+		return "", nil, fmt.Errorf("incorrect workspace id: %q", workspaceID)
+	}
+
+	cwd, err = a.checkDir(filepath.Join(base, "workspaces", workspaceID))
+	if err != nil {
+		return "", nil, err
+	}
+
+	roots = make([]string, 0, len(cmd.WorkspaceProjects))
+	for _, project := range cmd.WorkspaceProjects {
+		projectID := strings.TrimSpace(project.ProjectID)
+		if !validPathSegment(projectID) {
+			return "", nil, fmt.Errorf("incorrect workspace project id: %q", projectID)
+		}
+
+		dir, dirErr := a.checkDir(filepath.Join(cwd, projectID))
+		if dirErr != nil {
+			// Частичный запуск запрещён: любой отсутствующий корень — ошибка хода.
+			return "", nil, dirErr
+		}
+		roots = append(roots, dir)
+	}
+
+	return cwd, roots, nil
 }
 
 // unitDir вычисляет каталог юнита по существующей схеме раскладки раннера:

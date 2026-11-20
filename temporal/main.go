@@ -12,6 +12,7 @@ import (
 	opencodeActivity "runner/temporal/activity/opencode"
 	projectActivity "runner/temporal/activity/project"
 	unitActivity "runner/temporal/activity/unit"
+	workspaceActivity "runner/temporal/activity/workspace"
 	"runner/temporal/utils"
 	"syscall"
 	"time"
@@ -79,6 +80,12 @@ func Init(config config.Configuration) {
 	w.RegisterActivity(unitActivity.NachatOstanokuUnitaActivity)
 	w.RegisterActivity(unitActivity.NachatDeistvieUnitaActivity)
 	w.RegisterActivity(unitActivity.ProveritKonteinerUnitaActivity)
+
+	// Workspace-стенды: отдельные контейнеры и тома, та же очередь.
+	w.RegisterActivity(workspaceActivity.ZapustitWorkspaceActivity)
+	w.RegisterActivity(workspaceActivity.OstanovitWorkspaceActivity)
+	w.RegisterActivity(workspaceActivity.UdalitWorkspaceActivity)
+	w.RegisterActivity(workspaceActivity.ProveritIzmeneniyaWorkspaceActivity)
 
 	// Состояние контейнеров юнитов. При ошибке открытия БД раннер не падает:
 	// state.Default() вернёт no-op store, мониторинг продолжит работать без

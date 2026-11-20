@@ -33,6 +33,10 @@ type OpenCodeRequest struct {
 	WorkDir   string
 	Roots     []string
 	Messages  []Replika
+	// Workspace переключает CLI executor на каталог /workspace.
+	Workspace bool
+	// ReadOnly добавляет в промпт запрет на git commit и git push.
+	ReadOnly bool
 }
 
 // OpenCodeAnswer — нормализованный ответ OpenCode.

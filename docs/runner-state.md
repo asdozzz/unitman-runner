@@ -49,7 +49,7 @@
 
 | Цикл | Интервал | Что делает |
 |---|---|---|
-| Health-push | 1 минута | Отправляет `docker stats`, `/proc/meminfo`, `runnerId`, `taskQueue`, `unixtime` на `/api/runner/health`. |
+| Health-push | 1 минута | Отправляет `docker stats` (для юнитов `MemPerc`/`MemUsage` пересчитаны от лимита памяти), `/proc/meminfo`, `runnerId`, `taskQueue`, `unixtime` на `/api/runner/health`. |
 | Reconciler | 10 минут | Сверяет ожидаемое состояние из БД с фактическим (`docker ps`), отправляет уведомления о расхождениях и восстановлениях. |
 | Bootstrap | один раз при старте (внутри reconciler) | Обходит `projects/*/units/*`, читает `.env` и создаёт записи состояния для существующих юнитов. |
 | Cleanup | 2 часа | Выполняет `docker image prune -af` и `docker builder prune -af`. |
@@ -66,6 +66,18 @@
 - **Без спама уведомлений.** Для каждого юнита хранится `lastNotifiedActual` и
   `lastNotifiedAt`. Повторное уведомление об одном и том же расхождении
   отправляется не чаще, чем раз в 30 минут.
+- **Статистика памяти относительно лимита.** Базой health-push остаётся вывод
+  `docker stats --no-stream --format json` (CPU, сеть, перечень контейнеров).
+  Для контейнеров юнитов (`<UNITMAN_UNIT_NAME>.<UNITMAN_PROJECT_NAME>`) раннер
+  дополнительно обращается к Docker Engine API: `GET /containers/<name>/json`
+  (`HostConfig.Memory` — фактический лимит) и
+  `GET /containers/<name>/stats?stream=false` (`memory_stats.usage`). Затем
+  `MemPerc` пересчитывается как `usage / лимит`, а `MemUsage` — как
+  `<usage> / <лимит>`, чтобы процент не считался от общей памяти хоста.
+  Приоритет лимита: `HostConfig.Memory`, затем `UNITMAN_MEMORY_LIMIT` из
+  `.env` юнита, затем дефолт compose `3g`. Адрес daemon берётся из `DOCKER_HOST`
+  (`unix://`, `tcp://`, `http://`; по умолчанию `/var/run/docker.sock`).
+  Если API недоступен, строки уходят без изменений — health-push не ломается.
 - **Постоянный диск.** Для сохранения истории между перезапусками файл
   `RUNNER_STATE_DB` должен размещаться на постоянном диске или в Docker volume.
 - **Ошибка БД не фатальна.** При проблемах с открытием bbolt раннер продолжает

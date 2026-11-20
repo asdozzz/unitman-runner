@@ -13,9 +13,12 @@ services:
       - unit_app:/app
       - unit_containers:/var/lib/containers
       # Read-only источник для первичного seed git. Рабочая копия живёт в unit_app.
+      # Внимание: /seed/git и /seed/volumes — соседние точки монтирования.
+      # Сам /seed монтировать нельзя: вложенный ro-монт /seed/git требует mkdir
+      # внутри уже примонтированного ro-каталога и падает с EROFS.
       - ../../mainBranch/.git:/seed/git:ro
-      # Staging вложений, которые подготовил runner.
-      - ./seed:/seed:ro
+      # Staging вложений, которые подготовил runner: <unit>/seed/volumes -> /seed/volumes.
+      - ./seed/volumes:/seed/volumes:ro
       - ./podman-config/registries.conf:/usr/share/containers/registries.conf.d/99-override.conf:ro
     env_file:
       - .env
@@ -45,6 +48,10 @@ services:
     tmpfs:
       - /tmp
       - /run
+      # XDG-каталоги code-server: корневая ФС read-only, в HOME писать нельзя.
+      - /home/coder/.config
+      - /home/coder/.local
+      - /home/coder/.cache
     environment:
       - GIT_OPTIONAL_LOCKS=0
       - GIT_INDEX_FILE=/tmp/git-index

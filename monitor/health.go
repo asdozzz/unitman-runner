@@ -21,7 +21,11 @@ const (
 func RunHealth(ctx context.Context, store state.Store, client *Client, workdir string) {
 	_ = store
 
-	sendHealthOnce(ctx, client, workdir)
+	// Клиент Docker API создаётся один раз: при неподдерживаемой конфигурации
+	// он равен nil, и health-push уходит без обогащения статистики.
+	api := newDockerAPIClient()
+
+	sendHealthOnce(ctx, client, workdir, api)
 
 	ticker := time.NewTicker(healthInterval)
 	defer ticker.Stop()
@@ -34,13 +38,13 @@ func RunHealth(ctx context.Context, store state.Store, client *Client, workdir s
 			if ctx.Err() != nil {
 				return
 			}
-			sendHealthOnce(ctx, client, workdir)
+			sendHealthOnce(ctx, client, workdir, api)
 		}
 	}
 }
 
 // sendHealthOnce собирает и отправляет один health-push.
-func sendHealthOnce(ctx context.Context, client *Client, workdir string) {
+func sendHealthOnce(ctx context.Context, client *Client, workdir string, api *dockerAPIClient) {
 	if client == nil {
 		log.Printf("monitor: health: клиент не задан")
 		return
@@ -51,7 +55,7 @@ func sendHealthOnce(ctx context.Context, client *Client, workdir string) {
 		TaskQueue: client.TaskQueue,
 		// Ошибка docker stats не отменяет отправку: раннер продолжает работать.
 		Active:      true,
-		DockerStats: collectDockerStats(ctx, workdir),
+		DockerStats: collectUnitDockerStats(ctx, workdir, api),
 		MemInfo:     readMemInfo(),
 		Unixtime:    time.Now().Unix(),
 	}
@@ -59,6 +63,18 @@ func sendHealthOnce(ctx context.Context, client *Client, workdir string) {
 	if err := client.SendHealth(ctx, payload); err != nil {
 		log.Printf("monitor: health: %v", err)
 	}
+}
+
+// collectUnitDockerStats возвращает вывод `docker stats`, в котором для
+// юнит-контейнеров MemPerc/MemUsage пересчитаны относительно лимита памяти
+// юнита (а не от общей памяти хоста).
+func collectUnitDockerStats(ctx context.Context, workdir string, api *dockerAPIClient) string {
+	raw := collectDockerStats(ctx, workdir)
+	if raw == "" {
+		return raw
+	}
+
+	return enrichDockerStats(ctx, raw, unitMemoryLimits(workdir), api)
 }
 
 // collectDockerStats возвращает вывод `docker stats --no-stream --format json`.

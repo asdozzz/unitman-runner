@@ -2,7 +2,8 @@ services:
   unit:
     container_name: ${UNITMAN_UNIT_NAME}.${UNITMAN_PROJECT_NAME}
     runtime: sysbox-runc
-    image: asdozzz/dind-unit:latest
+    build:
+      context: .
     mem_limit: ${UNITMAN_MEMORY_LIMIT:-3g}
     memswap_limit: ${UNITMAN_MEMORY_LIMIT:-3g}
     stop_grace_period: 30s
@@ -17,9 +18,12 @@ services:
       - unit_app:/app
       - unit_docker_data:/var/lib/docker
       # Read-only источник для первичного seed git. Рабочая копия живёт в unit_app.
+      # Внимание: /seed/git и /seed/volumes — соседние точки монтирования.
+      # Сам /seed монтировать нельзя: вложенный ro-монт /seed/git требует mkdir
+      # внутри уже примонтированного ro-каталога и падает с EROFS.
       - ../../mainBranch/.git:/seed/git:ro
-      # Staging вложений, которые подготовил runner.
-      - ./seed:/seed:ro
+      # Staging вложений, которые подготовил runner: <unit>/seed/volumes -> /seed/volumes.
+      - ./seed/volumes:/seed/volumes:ro
 
   # Read-only IDE. Порт 47000 не публикуется на хост: сервис живёт
   # в network namespace контейнера unit и доступен через proxy по поддомену.
@@ -42,6 +46,10 @@ services:
     tmpfs:
       - /tmp
       - /run
+      # XDG-каталоги code-server: корневая ФС read-only, в HOME писать нельзя.
+      - /home/coder/.config
+      - /home/coder/.local
+      - /home/coder/.cache
     environment:
       - GIT_OPTIONAL_LOCKS=0
       - GIT_INDEX_FILE=/tmp/git-index
