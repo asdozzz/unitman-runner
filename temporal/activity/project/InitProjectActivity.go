@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/url"
 	"os"
 	"path"
 	"runner/temporal/activity/project/model"
@@ -32,7 +33,16 @@ func InitProjectActivity(ctx context.Context, command InitProjectCommand) (*Init
 	}
 
 	unixtimeStart := time.Now().Unix()
-	out, err := json.Marshal(command)
+	// StorageUrl содержит токен админа: в лог и в шаги уходит только URL без
+	// учётных данных.
+	logCommand := command
+	if clean, changed := stripStorageURLCredentials(command.StorageUrl); changed {
+		logCommand.StorageUrl = clean
+	} else if strings.Contains(command.StorageUrl, "@") {
+		logCommand.StorageUrl = "<redacted>"
+	}
+
+	out, err := json.Marshal(logCommand)
 	if err != nil {
 		result.Success = false
 		result.Steps = append(result.Steps, model.Step{Command: "json.Marshal", Response: err.Error(), Success: false, Unixtime: time.Now().Unix(), UnixtimeStart: unixtimeStart})
@@ -101,5 +111,43 @@ func InitProjectActivity(ctx context.Context, command InitProjectCommand) (*Init
 		result.Steps = append(result.Steps, model.Step{Command: strings.Join(argsForResponse, " "), Response: msg, Success: true, Unixtime: time.Now().Unix(), UnixtimeStart: unixtimeStart})
 	}
 
+	// Seed-репозиторий на хосте раннера не должен хранить токен админа:
+	// юниты клонируют из него локально, сетевой origin им не нужен.
+	if clean, changed := stripStorageURLCredentials(command.StorageUrl); changed {
+		unixtimeStart = time.Now().Unix()
+		args := []string{"git", "remote", "set-url", "origin", clean}
+		msg, err := utils.ExecCommand(filepath, args)
+		result.Steps = append(result.Steps, model.Step{
+			Command:       "git remote set-url origin <clean>",
+			Response:      msg,
+			Success:       err == nil,
+			Unixtime:      time.Now().Unix(),
+			UnixtimeStart: unixtimeStart,
+		})
+		if err != nil {
+			result.Success = false
+			return result, nil
+		}
+	}
+
 	return result, nil
+}
+
+// stripStorageURLCredentials удаляет логин/токен из URL и сообщает, изменился
+// ли он. Для не-URL строк возвращает исходное значение.
+func stripStorageURLCredentials(raw string) (string, bool) {
+	prepared := strings.TrimSpace(raw)
+	if prepared == "" {
+		return raw, false
+	}
+
+	parsed, err := url.Parse(prepared)
+	if err != nil || parsed.User == nil {
+		return raw, false
+	}
+
+	parsed.User = nil
+	clean := parsed.String()
+
+	return clean, clean != raw
 }

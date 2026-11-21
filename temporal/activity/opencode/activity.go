@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	unitActivity "runner/temporal/activity/unit"
+
 	"go.temporal.io/sdk/activity"
 )
 
@@ -105,6 +107,15 @@ type HodCommand struct {
 	WorkspaceID       string             `json:"WorkspaceId"`
 	WorkspaceProjects []WorkspaceProject `json:"WorkspaceProjects"`
 	WorkspaceReadOnly bool               `json:"WorkspaceReadOnly"`
+
+	// ReadOnly — режим хода по юниту (plan §8/§9). Для RW-хода раннер
+	// настраивает git-креденшелы из личного токена пользователя Token.
+	// Отсутствие полей у старых бэкендов означает readOnly=false, token="".
+	ReadOnly bool   `json:"ReadOnly"`
+	Token    string `json:"Token"`
+	// UserName/UserEmail — необязательная git-идентичность (15.12-а).
+	UserName  string `json:"UserName"`
+	UserEmail string `json:"UserEmail"`
 }
 
 // MarshalJSON сохраняет массивы пустыми массивами, а не null: этого требует
@@ -222,6 +233,30 @@ func (a *Activities) VipolnitHodOpenCodeActivity(ctx context.Context, cmd HodCom
 		return errorResult(ErrorKeyUnitDirectoryNotFound), nil
 	}
 
+	// Режим хода по юниту: read-only ход не должен иметь push-креденшелов,
+	// RW-ход получает личный токен владельца сессии на время хода. Ошибка
+	// настройки git-сессии безопасно деградирует до read-only.
+	effectiveReadOnly := cmd.WorkspaceReadOnly || cmd.ReadOnly
+	cleanupGitSession := func() {}
+	isUnitSession := strings.TrimSpace(cmd.WorkspaceID) == "" &&
+		(len(cmd.Units) > 0 || cmd.UnitID != nil)
+	if isUnitSession {
+		cleanup, ro, gitErr := unitActivity.BeginHodGitSession(
+			workDir,
+			effectiveReadOnly,
+			cmd.Token,
+			cmd.UserName,
+			cmd.UserEmail,
+		)
+		cleanupGitSession = cleanup
+		if gitErr != nil {
+			log.Printf("opencode: cannot configure git session: %s", redact(gitErr.Error(), cmd.Token))
+			ro = true
+		}
+		effectiveReadOnly = ro
+	}
+	defer cleanupGitSession()
+
 	runCtx, cancel := context.WithTimeout(ctx, turnBudget)
 	defer cancel()
 
@@ -235,7 +270,7 @@ func (a *Activities) VipolnitHodOpenCodeActivity(ctx context.Context, cmd HodCom
 		Roots:     roots,
 		Messages:  sobratSoobsheniya(cmd),
 		Workspace: strings.TrimSpace(cmd.WorkspaceID) != "",
-		ReadOnly:  cmd.WorkspaceReadOnly,
+		ReadOnly:  effectiveReadOnly,
 	})
 
 	if execErr != nil {
@@ -336,8 +371,14 @@ func (a *Activities) resolveWorkDirs(cmd HodCommand) (cwd string, roots []string
 	return roots[0], roots[1:], nil
 }
 
-// resolveWorkspaceDirs вычисляет cwd и roots workspace-хода:
-// cwd = <base>/workspaces/<WorkspaceID>, roots = каталоги проектов.
+// resolveWorkspaceDirs вычисляет cwd и roots workspace-хода.
+//
+// cwd — хостовый каталог <base>/workspaces/<WorkspaceID> с compose.yaml:
+// он служит контекстом docker compose exec. Корни — контейнерные пути
+// /workspace/<ProjectID>: проекты живут в томе workspace_<id>_app и на хосте
+// не видны. CLI executor запускает opencode в /workspace, где все проекты
+// уже присутствуют после успешного старта workspace, поэтому хостовая
+// проверка подкаталогов проектов не нужна (и невозможна).
 func (a *Activities) resolveWorkspaceDirs(base string, cmd HodCommand) (cwd string, roots []string, err error) {
 	workspaceID := strings.TrimSpace(cmd.WorkspaceID)
 	if !validPathSegment(workspaceID) {
@@ -356,12 +397,7 @@ func (a *Activities) resolveWorkspaceDirs(base string, cmd HodCommand) (cwd stri
 			return "", nil, fmt.Errorf("incorrect workspace project id: %q", projectID)
 		}
 
-		dir, dirErr := a.checkDir(filepath.Join(cwd, projectID))
-		if dirErr != nil {
-			// Частичный запуск запрещён: любой отсутствующий корень — ошибка хода.
-			return "", nil, dirErr
-		}
-		roots = append(roots, dir)
+		roots = append(roots, filepath.Join(workspaceContainerDir, projectID))
 	}
 
 	return cwd, roots, nil

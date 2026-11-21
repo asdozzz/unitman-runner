@@ -67,10 +67,16 @@ UNITMAN_WORKSPACE_OPENCODE_VOLUME
 
 `workspace-repo-sync.sh`:
 
-- при первом запуске делает `git clone --branch <branch>`;
-- при повторном — обновляет `origin`, делает fetch, переключает ветку,
-  сохраняет локальные изменения через stash/pop и выполняет
-  `git pull --rebase --autostash`;
+- при первом запуске делает `git clone --branch <branch>`; если ветки нет в
+  origin, клонирует базовую ветку `UNITMAN_REPO_BASE_BRANCH` (или дефолтную
+  ветку origin, если базовая не задана или недоступна) и создаёт ветку
+  workspace локально через `git checkout -b` — без upstream;
+- при повторном — обновляет `origin`, делает fetch, сохраняет локальные
+  изменения через stash/pop; если `origin/<branch>` существует, переключает
+  ветку и выполняет `git pull --rebase --autostash`; если ветки нет в origin,
+  но локальная ветка существует, просто переключается на неё без `pull`
+  (upstream отсутствует); если ветки нет ни в origin, ни локально — ошибка
+  `opencode.workspace.project_branch_not_found`;
 - при `UNITMAN_READ_ONLY=true` удаляет учётные данные из `origin` и ставит
   `pre-push`-хук, запрещающий push;
 - при ошибке печатает `UNITMAN_ERROR_KEY=<key>`; активность переносит ключ в
@@ -137,8 +143,10 @@ Read-only включается, если `ReadOnly=true` у workspace или `Ca
 
 Для workspace `HodCommand` получает `WorkspaceId`, `WorkspaceProjects`,
 `WorkspaceReadOnly`. Рабочий каталог хоста —
-`<base>/workspaces/<WorkspaceId>`, корни — подкаталоги проектов. В контейнере
-CLI запускается в `/workspace`:
+`<base>/workspaces/<WorkspaceId>` (контекст `docker compose exec`), корни —
+контейнерные подкаталоги `/workspace/<ProjectId>`: проекты живут в томе
+`workspace_<id>_app` и на хосте не видны. В контейнере CLI запускается в
+`/workspace`:
 
 ```
 opencode run --format json --auto --model unitman/main --dir /workspace ...

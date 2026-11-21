@@ -79,6 +79,12 @@ func NachatUdalenieUnitaActivity(ctx context.Context, command NachatUdalenieUnit
 	result.Steps = model.AddStepToSteps(result.Steps, "check unit dir", "", nil, unixtimeStart)
 
 	if unitDirExists {
+		// Best-effort: удаление тома всё равно уничтожит токен, но не оставляем
+		// его в работающем контейнере до завершения операции.
+		unixtimeCleanupStart := time.Now().Unix()
+		errCleanup := ClearEditorSession(unitPath)
+		result.Steps = model.AddStepToSteps(result.Steps, "clear editor session", "", errCleanup, unixtimeCleanupStart)
+
 		composePath := filepath.Join(unitPath, "compose.yaml")
 		envPath := filepath.Join(unitPath, ".env")
 

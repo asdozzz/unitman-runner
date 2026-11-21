@@ -63,6 +63,9 @@ type Project struct {
 	ProjectCode string
 	StorageUrl  string
 	CanPush     bool
+	// MainBranch — основная ветка проекта (снимок из Unitman). Нужна скрипту
+	// repo-sync, чтобы создать ветку workspace локально, если её нет в origin.
+	MainBranch string
 }
 
 // ProjectRef — ссылка на проект для проверки изменений.
@@ -445,13 +448,9 @@ func waitIDEHealthy(ctx context.Context, workspaceDir, slug string) error {
 	}
 }
 
-// syncProject клонирует/обновляет проект внутри workspace.
-func syncProject(
-	ctx context.Context,
-	workspaceDir string,
-	command ZapustitWorkspaceCommand,
-	project Project,
-) (string, error) {
+// buildRepoEnv собирает переменные окружения для workspace-repo-sync.
+// Вынесено отдельно, чтобы контракт окружения можно было покрыть тестами.
+func buildRepoEnv(command ZapustitWorkspaceCommand, project Project) []string {
 	env := []string{
 		"UNITMAN_WORKSPACE_DIR=" + workspaceContainerDir,
 		"UNITMAN_PROJECT_ID=" + projectDirName(project.ProjectId),
@@ -460,6 +459,24 @@ func syncProject(
 		"UNITMAN_REPO_BRANCH=" + command.Branch,
 		"UNITMAN_READ_ONLY=" + strconv.FormatBool(command.ReadOnly || !project.CanPush),
 	}
+
+	// Базовую ветку передаём только если она известна: при пустом значении
+	// скрипт сам клонирует дефолтную ветку origin.
+	if base := strings.TrimSpace(project.MainBranch); base != "" {
+		env = append(env, "UNITMAN_REPO_BASE_BRANCH="+base)
+	}
+
+	return env
+}
+
+// syncProject клонирует/обновляет проект внутри workspace.
+func syncProject(
+	ctx context.Context,
+	workspaceDir string,
+	command ZapustitWorkspaceCommand,
+	project Project,
+) (string, error) {
+	env := buildRepoEnv(command, project)
 
 	return execWorkspace(ctx, workspaceDir, "/usr/local/bin/workspace-repo-sync", workspaceContainerDir, env)
 }

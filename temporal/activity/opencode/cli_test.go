@@ -153,6 +153,10 @@ func TestCLIExecutorRunsOpenCodeInUnitContainer(t *testing.T) {
 	if gotOpts.WorkDir != unitContainerAppDir {
 		t.Fatalf("unexpected container workdir: %q", gotOpts.WorkDir)
 	}
+	// Ход по юниту не задаёт сервис явно: UnitExec подставит "unit".
+	if gotOpts.Service != "" {
+		t.Fatalf("unexpected compose service: %q", gotOpts.Service)
+	}
 	if !strings.Contains(gotCommand, "opencode run") {
 		t.Fatalf("opencode run is missing: %q", gotCommand)
 	}
@@ -161,6 +165,40 @@ func TestCLIExecutorRunsOpenCodeInUnitContainer(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(gotOpts.Env, "\n"), "OPENCODE_DISABLE_AUTOUPDATE=1") {
 		t.Fatalf("autoupdate env is missing: %#v", gotOpts.Env)
+	}
+}
+
+func TestCLIExecutorRunsOpenCodeInWorkspaceContainer(t *testing.T) {
+	output := `{"type":"text","sessionID":"ses_ws","part":{"id":"p1","type":"text","text":"Готово"}}`
+
+	var gotOpts unit.UnitExecOptions
+	executor := &CLIExecutor{ExecUnit: func(_ context.Context, _ string, _ string, opts unit.UnitExecOptions) (string, error) {
+		gotOpts = opts
+		return output, nil
+	}}
+
+	answer, err := executor.Execute(context.Background(), OpenCodeRequest{
+		URL:       "https://example.test/v1",
+		Model:     "gpt-5-codex",
+		APIKey:    "sk-secret",
+		WorkDir:   "/work/workspace",
+		Workspace: true,
+		Messages: []Replika{
+			{Role: "user", Text: "привет"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if answer.Text != "Готово" {
+		t.Fatalf("unexpected answer: %q", answer.Text)
+	}
+	// Workspace-ход исполняется в сервисе "workspace" и в каталоге /workspace.
+	if gotOpts.Service != workspaceComposeService {
+		t.Fatalf("unexpected compose service: %q", gotOpts.Service)
+	}
+	if gotOpts.WorkDir != workspaceContainerDir {
+		t.Fatalf("unexpected container workdir: %q", gotOpts.WorkDir)
 	}
 }
 

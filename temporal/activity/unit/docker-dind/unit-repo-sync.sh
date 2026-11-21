@@ -89,4 +89,26 @@ fi
 
 git branch --set-upstream-to="origin/$BRANCH" "$BRANCH" >/dev/null 2>&1 || true
 
+# Токен админа не остаётся в origin после клонирования/обновления.
+if git remote get-url origin >/dev/null 2>&1; then
+    ORIGIN_URL=$(git remote get-url origin)
+    CLEAN_URL=$(printf '%s' "$ORIGIN_URL" | sed -E 's#^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/@]*@#\1#')
+    if [ "$CLEAN_URL" != "$ORIGIN_URL" ]; then
+        git remote set-url origin "$CLEAN_URL"
+    fi
+fi
+
+# Без активной редакторской сессии push запрещён. Активную сессию не трогаем:
+# её настраивает отдельная активность и она сама управляет deny-хуком.
+if [ ! -f "$APP_DIR/.unitman/editor-session" ]; then
+    mkdir -p "$APP_DIR/.git/hooks"
+    cat > "$APP_DIR/.git/hooks/pre-push" <<'UNITMAN_PRE_PUSH_EOF'
+#!/bin/sh
+# unitman deny push: no active editor session
+echo "unit is read-only: git push is forbidden" >&2
+exit 1
+UNITMAN_PRE_PUSH_EOF
+    chmod +x "$APP_DIR/.git/hooks/pre-push"
+fi
+
 echo "repository is ready on branch $BRANCH"

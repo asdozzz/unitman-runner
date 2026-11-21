@@ -33,6 +33,21 @@ func TestUnitContainerCommandWithOptions(t *testing.T) {
 	}
 }
 
+func TestUnitContainerCommandWithCustomService(t *testing.T) {
+	want := []string{
+		"docker", "compose", "exec", "-T",
+		"--workdir", "/workspace",
+		"workspace", "sh", "-c", "echo hello",
+	}
+	got := UnitContainerCommandWithOptions("echo hello", UnitExecOptions{
+		WorkDir: "/workspace",
+		Service: "workspace",
+	})
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected argv: %#v", got)
+	}
+}
+
 func TestExecInUnitContainerPassesDirectoryAndCommand(t *testing.T) {
 	var (
 		gotDir  string

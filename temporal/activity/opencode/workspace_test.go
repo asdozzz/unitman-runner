@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func prepareWorkspaceDirs(t *testing.T, root, workspaceID string, projectIDs ...string) []string {
+func prepareWorkspaceDir(t *testing.T, root, workspaceID string) string {
 	t.Helper()
 
 	workspaceDir := filepath.Join(root, "workspaces", workspaceID)
@@ -14,21 +14,12 @@ func prepareWorkspaceDirs(t *testing.T, root, workspaceID string, projectIDs ...
 		t.Fatalf("cannot create workspace dir: %v", err)
 	}
 
-	dirs := make([]string, 0, len(projectIDs))
-	for _, projectID := range projectIDs {
-		dir := filepath.Join(workspaceDir, projectID)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.Fatalf("cannot create project dir: %v", err)
-		}
-		dirs = append(dirs, dir)
-	}
-
-	return dirs
+	return workspaceDir
 }
 
 func TestResolveWorkDirsWorkspace(t *testing.T) {
 	root := t.TempDir()
-	dirs := prepareWorkspaceDirs(t, root, "ws-1", "project-1", "project-2")
+	workspaceDir := prepareWorkspaceDir(t, root, "ws-1")
 
 	acts := &Activities{WorkDir: root}
 	cwd, roots, err := acts.resolveWorkDirs(HodCommand{
@@ -42,29 +33,40 @@ func TestResolveWorkDirsWorkspace(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	wantCwd := filepath.Join(root, "workspaces", "ws-1")
-	if cwd != wantCwd {
-		t.Fatalf("cwd = %q, want %q", cwd, wantCwd)
+	if cwd != workspaceDir {
+		t.Fatalf("cwd = %q, want %q", cwd, workspaceDir)
 	}
-	if len(roots) != 2 || roots[0] != dirs[0] || roots[1] != dirs[1] {
-		t.Fatalf("unexpected roots: %+v", roots)
+
+	// Проекты живут в томе workspace_<id>_app внутри контейнера и на хосте
+	// не видны: корни — контейнерные пути /workspace/<ProjectId>.
+	wantRoots := []string{
+		filepath.Join(workspaceContainerDir, "project-1"),
+		filepath.Join(workspaceContainerDir, "project-2"),
+	}
+	if len(roots) != len(wantRoots) {
+		t.Fatalf("roots = %+v, want %+v", roots, wantRoots)
+	}
+	for i, want := range wantRoots {
+		if roots[i] != want {
+			t.Fatalf("roots[%d] = %q, want %q", i, roots[i], want)
+		}
 	}
 }
 
-func TestResolveWorkDirsWorkspaceMissingProject(t *testing.T) {
+func TestResolveWorkDirsWorkspaceRejectsBadProjectID(t *testing.T) {
 	root := t.TempDir()
-	prepareWorkspaceDirs(t, root, "ws-1", "project-1")
+	prepareWorkspaceDir(t, root, "ws-1")
 
 	acts := &Activities{WorkDir: root}
 	_, _, err := acts.resolveWorkDirs(HodCommand{
 		WorkspaceID: "ws-1",
 		WorkspaceProjects: []WorkspaceProject{
 			{ProjectID: "project-1"},
-			{ProjectID: "project-missing"},
+			{ProjectID: "../escape"},
 		},
 	})
 	if err == nil {
-		t.Fatal("expected an error for a missing project directory")
+		t.Fatal("expected an error for an invalid project id")
 	}
 }
 

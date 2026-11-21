@@ -76,6 +76,17 @@ func Init(config config.Configuration) {
 	w.RegisterActivity(unitActivity.NachatObnovlenieUnitaActivity)
 	w.RegisterActivity(unitActivity.NachatPodgotovkuUnitaActivity)
 	w.RegisterActivity(unitActivity.NachatSbrosPodgotovkiUnitaActivity)
+
+	// Редакторские сессии юнита (plan §8). Имена активностей фиксированы:
+	// PHP-workflow вызывает их по литеральному имени.
+	w.RegisterActivityWithOptions(
+		unitActivity.IzmenitRezhimRedaktoraUnitaActivity,
+		activity.RegisterOptions{Name: "IzmenitRezhimRedaktoraUnitaActivity"},
+	)
+	w.RegisterActivityWithOptions(
+		unitActivity.PodgotovitSessiyuRedaktoraActivity,
+		activity.RegisterOptions{Name: "PodgotovitSessiyuRedaktoraActivity"},
+	)
 	w.RegisterActivity(unitActivity.NachatZapuskUnitaActivity)
 	w.RegisterActivity(unitActivity.NachatOstanokuUnitaActivity)
 	w.RegisterActivity(unitActivity.NachatDeistvieUnitaActivity)

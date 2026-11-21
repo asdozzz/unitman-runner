@@ -15,10 +15,13 @@ const unitComposeService = "unit"
 
 // UnitExecOptions — дополнительные параметры запуска команды в контейнере.
 // WorkDir задаёт рабочий каталог внутри контейнера, Env — переменные
-// окружения в формате KEY=VALUE.
+// окружения в формате KEY=VALUE, Service — имя compose-сервиса.
 type UnitExecOptions struct {
 	WorkDir string
 	Env     []string
+	// Service — имя compose-сервиса. Пустое значение означает сервис юнита
+	// "unit"; workspace-ходы указывают "workspace".
+	Service string
 }
 
 // UnitContainerCommand собирает argv для запуска shell-команды внутри
@@ -28,8 +31,8 @@ func UnitContainerCommand(command string) []string {
 	return UnitContainerCommandWithOptions(command, UnitExecOptions{})
 }
 
-// UnitContainerCommandWithOptions собирает argv с рабочим каталогом и
-// переменными окружения внутри контейнера.
+// UnitContainerCommandWithOptions собирает argv с рабочим каталогом,
+// переменными окружения и именем compose-сервиса внутри контейнера.
 func UnitContainerCommandWithOptions(command string, opts UnitExecOptions) []string {
 	args := []string{"docker", "compose", "exec", "-T"}
 
@@ -43,7 +46,12 @@ func UnitContainerCommandWithOptions(command string, opts UnitExecOptions) []str
 		args = append(args, "-e", env)
 	}
 
-	return append(args, unitComposeService, "sh", "-c", command)
+	service := strings.TrimSpace(opts.Service)
+	if service == "" {
+		service = unitComposeService
+	}
+
+	return append(args, service, "sh", "-c", command)
 }
 
 // ExecInUnitContainer выполняет команду внутри работающего контейнера юнита.

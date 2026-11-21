@@ -32,6 +32,9 @@ type NachatPodgotovkuUnita struct {
 	Branch            string
 	ImageConfig       model.ImageConfigStruct
 	Volumes           []Volume
+	// RezhimRedaktora — режим IDE-сайдкара `view`|`edit`. Отсутствие поля у
+	// старых бэкендов трактуется как `view` (обратная совместимость).
+	RezhimRedaktora string
 }
 
 type ResultatPodgotovkiUnita struct {
@@ -103,6 +106,17 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 
 	fileSteps, err := PrepareUnitFiles(unitPath, command.ImageConfig)
 	result.Steps = append(result.Steps, fileSteps...)
+	if err != nil {
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
+	}
+
+	// Режим IDE применяется к compose.yaml до docker compose up: для `edit`
+	// том проекта монтируется `:rw`, для `view` — `:ro`.
+	rezhim := NormalizeRezhimRedaktora(command.RezhimRedaktora)
+	unixtimeStart = time.Now().Unix()
+	err = ApplyIdeEditorMode(unitPath, rezhim)
+	result.Steps = model.AddStepToSteps(result.Steps, "apply ide mode="+rezhim, "", err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil
@@ -186,6 +200,16 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		return wrapResultatPogotovki(result), nil
 	}
 
+	// После клонирования/обновления токен админа больше не хранится в origin,
+	// а push без активной редакторской сессии запрещён pre-push хуком.
+	unixtimeStart = time.Now().Unix()
+	err = PrepareUnitGitSecurity(unitPath)
+	result.Steps = model.AddStepToSteps(result.Steps, "prepare git security", "", err, unixtimeStart)
+	if err != nil {
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
+	}
+
 	volumeSteps, stagedVolumes, err := PrepareVolumes(unitPath, command.Volumes, func(dir string) (bool, error) {
 		return UnitVolumeSeeded(unitPath, dir)
 	})
@@ -208,12 +232,15 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 	// IDE стартует вместе с unit до SyncUnitRepo, поэтому её /tmp/git-index
 	// мог быть скопирован до появления .git/index. Обновляем индекс после
 	// синхронизации репозитория и томов, иначе git diff в редакторе не работает.
-	unixtimeStart = time.Now().Unix()
-	err = RefreshIdeGitIndex(unitPath)
-	result.Steps = model.AddStepToSteps(result.Steps, ideGitIndexStepCommand, "", err, unixtimeStart)
-	if err != nil {
-		result.Success = 0
-		return wrapResultatPogotovki(result), nil
+	// В режиме edit IDE работает с настоящим .git/index, копия не нужна.
+	if rezhim == RezhimRedaktoraView {
+		unixtimeStart = time.Now().Unix()
+		err = RefreshIdeGitIndex(unitPath)
+		result.Steps = model.AddStepToSteps(result.Steps, ideGitIndexStepCommand, "", err, unixtimeStart)
+		if err != nil {
+			result.Success = 0
+			return wrapResultatPogotovki(result), nil
+		}
 	}
 
 	unixtimeStart = time.Now().Unix()

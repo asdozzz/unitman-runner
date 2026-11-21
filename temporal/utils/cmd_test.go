@@ -85,3 +85,18 @@ func TestExecCommandContextCancellation(t *testing.T) {
 		t.Fatalf("command was not interrupted by context cancellation")
 	}
 }
+
+func TestRedactURLCredentials(t *testing.T) {
+	cases := map[string]string{
+		"git clone https://oauth2:glpat-secret@gitlab.example.com/group/repo.git": "git clone https://redacted@gitlab.example.com/group/repo.git",
+		"https://user@github.com/org/repo.git":                                    "https://redacted@github.com/org/repo.git",
+		"https://gitlab.example.com/group/repo.git":                               "https://gitlab.example.com/group/repo.git",
+		"no url here": "no url here",
+	}
+
+	for input, want := range cases {
+		if got := RedactURLCredentials(input); got != want {
+			t.Fatalf("RedactURLCredentials(%q) = %q, want %q", input, got, want)
+		}
+	}
+}

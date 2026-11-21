@@ -18,6 +18,9 @@ type NachatObnovlenieUnita struct {
 	ProjectName string
 	Id          string
 	Name        string
+	// StorageUrl содержит токен админа и используется только на время fetch;
+	// после синхронизации токен удаляется из origin.
+	StorageUrl string
 }
 
 type ResultatObnovleniyaUnita struct {
@@ -103,8 +106,18 @@ func NachatObnovlenieUnitaActivity(ctx context.Context, command NachatObnovlenie
 	}
 
 	unixtimeStart = time.Now().Unix()
-	msg, err = SyncUnitRepo(unitPath, branch, "")
+	msg, err = SyncUnitRepo(unitPath, branch, command.StorageUrl)
 	result.Steps = model.AddStepToSteps(result.Steps, "unit-repo-sync branch="+branchLabel, msg, err, unixtimeStart)
+	if err != nil {
+		result.Success = 0
+		return result, nil
+	}
+
+	// Обновление кода всегда оставляет безопасное git-состояние: без токена в
+	// origin и без push-креденшелов. Сессия редактора переподготовится отдельно.
+	unixtimeStart = time.Now().Unix()
+	err = PrepareUnitGitSecurity(unitPath)
+	result.Steps = model.AddStepToSteps(result.Steps, "prepare git security", "", err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil

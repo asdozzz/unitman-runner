@@ -9,11 +9,21 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 )
+
+// urlCredentialPattern находит userinfo в URL, чтобы токены не попадали в
+// сообщения об ошибках и логи команд.
+var urlCredentialPattern = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.-]*://)[^/@\s]*@`)
+
+// RedactURLCredentials заменяет логин/токен в URL на `redacted`.
+func RedactURLCredentials(value string) string {
+	return urlCredentialPattern.ReplaceAllString(value, "${1}redacted@")
+}
 
 // commandTimeout — максимальное время выполнения одной команды.
 const commandTimeout = 30 * time.Minute
@@ -169,7 +179,7 @@ func execCommand(ctx context.Context, workingDirectory string, app []string, tim
 	}
 
 	outStr := stdoutBuf.String() + stderrBuf.String()
-	command := strings.Join(app, " ")
+	command := RedactURLCredentials(strings.Join(app, " "))
 
 	if prompt := detector.Match(); prompt != "" {
 		return outStr, fmt.Errorf("%w: обнаружено приглашение %q, команда: %s", ErrInteractiveInput, prompt, command)
@@ -187,11 +197,12 @@ func execCommand(ctx context.Context, workingDirectory string, app []string, tim
 	}
 
 	if runErr != nil {
-		log.Printf("cmd.Run() failed with %s\n - out: %s", runErr, outStr)
+		safeOut := RedactURLCredentials(outStr)
+		log.Printf("cmd.Run() failed with %s\n - out: %s", runErr, safeOut)
 		if strings.TrimSpace(outStr) == "" {
 			return "", runErr
 		}
-		return "", errors.New(outStr)
+		return "", errors.New(safeOut)
 	}
 
 	return outStr, nil

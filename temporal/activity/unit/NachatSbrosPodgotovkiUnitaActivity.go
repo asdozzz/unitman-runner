@@ -98,6 +98,15 @@ func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbros
 	}
 
 	if unitIsRunning == true {
+		// Сброс подготовки не оставляет личный токен редактора в томе /app.
+		unixtimeCleanupStart := time.Now().Unix()
+		errCleanup := ClearEditorSession(filepath)
+		result.Steps = model.AddStepToSteps(result.Steps, "clear editor session", "", errCleanup, unixtimeCleanupStart)
+		if errCleanup != nil {
+			result.Success = 0
+			return wrapResultatSbrosaPodgotovki(result), nil
+		}
+
 		for _, commandString := range command.Commands {
 			unixtimeStart := time.Now().Unix()
 			args := UnitContainerCommand(commandString)

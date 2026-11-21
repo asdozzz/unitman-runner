@@ -13,7 +13,10 @@ RUN apt-get update \
 
 # settings.json кладётся в read-only каталог образа и копируется entrypoint-ом
 # в /tmp, потому что корневая ФС контейнера смонтирована read_only.
+# settings.edit.json используется в режиме редактора: без readonlyInclude,
+# с включённым терминалом.
 COPY settings.json /opt/unitman-ide/settings.json
+COPY settings.edit.json /opt/unitman-ide/settings.edit.json
 COPY entrypoint.sh /usr/local/bin/unitman-ide-entrypoint.sh
 
 RUN chmod +x /usr/local/bin/unitman-ide-entrypoint.sh

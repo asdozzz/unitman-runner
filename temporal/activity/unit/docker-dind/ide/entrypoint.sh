@@ -7,6 +7,12 @@ PROJECT_DIR="/home/coder/project"
 SETTINGS_SOURCE="/opt/unitman-ide/settings.json"
 GIT_INDEX_TARGET="/tmp/git-index"
 
+# В режиме редактора файлы должны быть доступны для записи, а терминал —
+# включён (git push под личным токеном). В view-режиме остаются ограничения.
+if [ "${UNITMAN_IDE_EDIT_MODE:-0}" = "1" ]; then
+    SETTINGS_SOURCE="/opt/unitman-ide/settings.edit.json"
+fi
+
 # Корневая ФС read-only, поэтому XDG-каталоги (config/data/cache) уводим
 # в tmpfs. Иначе code-server падает на старте:
 # ENOENT: no such file or directory, mkdir '/home/coder/.config'.

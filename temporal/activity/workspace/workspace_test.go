@@ -108,6 +108,47 @@ func TestParsePorcelain(t *testing.T) {
 	}
 }
 
+func envEntry(env []string, key string) (string, bool) {
+	prefix := key + "="
+	for _, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			return entry, true
+		}
+	}
+	return "", false
+}
+
+func TestBuildRepoEnvIncludesBaseBranch(t *testing.T) {
+	command := ZapustitWorkspaceCommand{Branch: "feature/test"}
+	project := Project{
+		ProjectId:   "project-1",
+		ProjectCode: "api",
+		StorageUrl:  "https://example.com/services/api.git",
+		CanPush:     true,
+		MainBranch:  "main",
+	}
+
+	env := buildRepoEnv(command, project)
+
+	if got, ok := envEntry(env, "UNITMAN_REPO_BASE_BRANCH"); !ok || got != "UNITMAN_REPO_BASE_BRANCH=main" {
+		t.Fatalf("base branch env = %q (present=%v), want UNITMAN_REPO_BASE_BRANCH=main: %v", got, ok, env)
+	}
+	if got, ok := envEntry(env, "UNITMAN_REPO_BRANCH"); !ok || got != "UNITMAN_REPO_BRANCH=feature/test" {
+		t.Fatalf("branch env = %q (present=%v), want UNITMAN_REPO_BRANCH=feature/test: %v", got, ok, env)
+	}
+}
+
+func TestBuildRepoEnvOmitsEmptyBaseBranch(t *testing.T) {
+	env := buildRepoEnv(ZapustitWorkspaceCommand{Branch: "feature/test"}, Project{ProjectId: "project-1"})
+
+	if got, ok := envEntry(env, "UNITMAN_REPO_BASE_BRANCH"); ok {
+		t.Fatalf("empty base branch must not be exported, got %q: %v", got, env)
+	}
+	if got, ok := envEntry(env, "UNITMAN_REPO_BRANCH"); !ok || got != "UNITMAN_REPO_BRANCH=feature/test" {
+		t.Fatalf("branch env = %q (present=%v): %v", got, ok, env)
+	}
+}
+
 func TestErrorKeyFromOutput(t *testing.T) {
 	output := "git clone failed\nUNITMAN_ERROR_KEY=opencode.workspace.project_clone_failed\n"
 	if got := errorKeyFromOutput(output); got != "opencode.workspace.project_clone_failed" {

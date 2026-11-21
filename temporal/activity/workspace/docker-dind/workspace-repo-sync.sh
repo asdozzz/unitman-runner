@@ -6,6 +6,7 @@ PROJECT_ID=${UNITMAN_PROJECT_ID:-}
 PROJECT_CODE=${UNITMAN_PROJECT_CODE:-}
 URL=${UNITMAN_REPO_URL:-}
 BRANCH=${UNITMAN_REPO_BRANCH:-}
+BASE_BRANCH=${UNITMAN_REPO_BASE_BRANCH:-}
 READ_ONLY=${UNITMAN_READ_ONLY:-false}
 
 fail() {
@@ -33,12 +34,37 @@ if [ ! -d "$DIR/.git" ]; then
     mkdir -p "$DIR"
 
     if ! OUT=$(git clone --branch "$BRANCH" "$URL" "$DIR" 2>&1); then
-        echo "$OUT" >&2
         case "$OUT" in
-            *"not found"*|*"Could not find remote branch"*|*"Remote branch"*)
-                fail "opencode.workspace.project_branch_not_found"
+            *"not found in upstream origin"*|*"Could not find remote branch"*|*"Remote branch"*)
+                # Ветки workspace нет в origin — клонируем базовую ветку
+                # (или дефолтную, если базовая не задана/недоступна) и создаём
+                # локальную ветку без upstream.
+                rm -rf "$DIR"
+                mkdir -p "$DIR"
+
+                CLONED=0
+                if [ -n "$BASE_BRANCH" ]; then
+                    if OUT=$(git clone --branch "$BASE_BRANCH" "$URL" "$DIR" 2>&1); then
+                        CLONED=1
+                    fi
+                fi
+
+                if [ "$CLONED" -eq 0 ]; then
+                    rm -rf "$DIR"
+                    mkdir -p "$DIR"
+                    if ! OUT=$(git clone "$URL" "$DIR" 2>&1); then
+                        echo "$OUT" >&2
+                        fail "opencode.workspace.project_clone_failed"
+                    fi
+                fi
+
+                cd "$DIR"
+                if ! git checkout -b "$BRANCH"; then
+                    fail "opencode.workspace.project_branch_not_found"
+                fi
                 ;;
             *)
+                echo "$OUT" >&2
                 fail "opencode.workspace.project_clone_failed"
                 ;;
         esac
@@ -56,7 +82,12 @@ else
         fail "opencode.workspace.project_clone_failed"
     fi
 
-    if ! git rev-parse --verify --quiet "origin/$BRANCH" >/dev/null; then
+    if git rev-parse --verify --quiet "origin/$BRANCH" >/dev/null; then
+        TARGET_ORIGIN=1
+    elif git rev-parse --verify --quiet "refs/heads/$BRANCH" >/dev/null; then
+        # Локальная ветка уже создана ранее — upstream у неё нет, pull не нужен.
+        TARGET_ORIGIN=0
+    else
         fail "opencode.workspace.project_branch_not_found"
     fi
 
@@ -66,21 +97,34 @@ else
         STASHED=1
     fi
 
-    if ! git checkout -B "$BRANCH" "origin/$BRANCH"; then
-        fail "opencode.workspace.project_branch_not_found"
-    fi
+    if [ "$TARGET_ORIGIN" -eq 1 ]; then
+        if ! git checkout -B "$BRANCH" "origin/$BRANCH"; then
+            fail "opencode.workspace.project_branch_not_found"
+        fi
 
-    if [ "$STASHED" -eq 1 ]; then
-        if ! git stash pop; then
-            echo "conflict while restoring local changes; stash preserved" >&2
+        if [ "$STASHED" -eq 1 ]; then
+            if ! git stash pop; then
+                echo "conflict while restoring local changes; stash preserved" >&2
+                fail "opencode.workspace.operation_failed"
+            fi
+        fi
+
+        git branch --set-upstream-to="origin/$BRANCH" "$BRANCH" >/dev/null 2>&1 || true
+
+        if ! git pull --rebase --autostash origin "$BRANCH"; then
             fail "opencode.workspace.operation_failed"
         fi
-    fi
+    else
+        if ! git checkout "$BRANCH"; then
+            fail "opencode.workspace.project_branch_not_found"
+        fi
 
-    git branch --set-upstream-to="origin/$BRANCH" "$BRANCH" >/dev/null 2>&1 || true
-
-    if ! git pull --rebase --autostash origin "$BRANCH"; then
-        fail "opencode.workspace.operation_failed"
+        if [ "$STASHED" -eq 1 ]; then
+            if ! git stash pop; then
+                echo "conflict while restoring local changes; stash preserved" >&2
+                fail "opencode.workspace.operation_failed"
+            fi
+        fi
     fi
 fi
 

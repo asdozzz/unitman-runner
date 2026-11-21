@@ -18,6 +18,9 @@ const (
 	unitContainerAppDir = "/app"
 	// workspaceContainerDir — корень workspace внутри его контейнера.
 	workspaceContainerDir = "/workspace"
+	// workspaceComposeService — имя compose-сервиса workspace-стенда
+	// (раскладка temporal/activity/workspace: workspaceComposeService).
+	workspaceComposeService = "workspace"
 )
 
 // CLIExecutor выполняет ход через установленный в контейнере юнита OpenCode
@@ -80,6 +83,10 @@ func (e *CLIExecutor) execute(ctx context.Context, req OpenCodeRequest, continue
 			"OPENCODE_CONFIG_CONTENT=" + config,
 			"OPENCODE_DISABLE_AUTOUPDATE=1",
 		},
+	}
+	// Workspace живёт в compose-сервисе "workspace", а не "unit".
+	if req.Workspace {
+		opts.Service = workspaceComposeService
 	}
 
 	execUnit := e.ExecUnit
@@ -206,8 +213,9 @@ const cliQuestionInstruction = `Если для продолжения дейс�
 {"questions":[{"id":"q1","text":"текст вопроса","allowFreeText":true,"options":[{"id":"o1","label":"вариант","description":"пояснение"}]}]}
 Если вопрос допускает свободный ответ, установи allowFreeText = true.`
 
-// cliReadOnlyInstruction добавляется для workspace с read-only доступом.
-const cliReadOnlyInstruction = `Workspace работает в режиме read-only: запрещено выполнять git commit и git push. Можно менять файлы в рабочей копии, но нельзя создавать коммиты и отправлять их в удалённый репозиторий.`
+// cliReadOnlyInstruction добавляется для read-only доступа (workspace или
+// юнит без прав редактирования).
+const cliReadOnlyInstruction = `Работа идёт в режиме read-only: запрещено выполнять git commit и git push. Можно менять файлы в рабочей копии, но нельзя создавать коммиты и отправлять их в удалённый репозиторий.`
 
 type cliConfig struct {
 	Provider map[string]cliProvider `json:"provider"`
