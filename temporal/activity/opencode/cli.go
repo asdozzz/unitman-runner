@@ -121,13 +121,16 @@ func (e *CLIExecutor) execute(ctx context.Context, req OpenCodeRequest, continue
 
 // cliCommand собирает shell-команду для opencode run. Промпт передаётся
 // позиционным аргументом и экранируется для POSIX shell.
+//
+// Каталог работы флагом не передаётся: в opencode v2 у `run` нет `--dir`,
+// а рабочий каталог и так задаётся через `docker compose exec --workdir`
+// (см. UnitExecOptions.WorkDir в execute()).
 func cliCommand(req OpenCodeRequest, continueSession bool) string {
 	args := []string{
 		"opencode", "run",
 		"--format", "json",
 		"--auto",
 		"--model", cliProviderID + "/" + cliModelAlias,
-		"--dir", containerWorkDir(req),
 	}
 	if continueSession && strings.TrimSpace(req.SessionID) != "" {
 		args = append(args, "--session", req.SessionID)

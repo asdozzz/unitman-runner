@@ -44,7 +44,6 @@ func TestCLICommandUsesSessionOnlyWhenContinuing(t *testing.T) {
 		"--format json",
 		"--auto",
 		"--model unitman/main",
-		"--dir /app",
 		"--session sess_1",
 		"новое",
 	} {

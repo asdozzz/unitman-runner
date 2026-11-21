@@ -1,8 +1,20 @@
-# OpenCode CLI: официальный образ содержит готовый бинарник под musl,
-# поэтому забираем его отдельным stage и копируем в dind-образ.
-FROM ghcr.io/anomalyco/opencode:latest AS opencode
+# OpenCode CLI: берём musl-сборку с GitHub-релизов. Образ
+# ghcr.io/anomalyco/opencode застрял на V1 (1.19.6), а проектные
+# opencode.json используют V2-схему permissions, которую V1 отвергает.
+ARG OPENCODE_VERSION=v2.3.2
+
+FROM alpine:3.20 AS opencode
+ARG OPENCODE_VERSION
+RUN apk add --no-cache curl tar \
+    && curl -fsSL "https://github.com/sst/opencode/releases/download/${OPENCODE_VERSION}/opencode-linux-x64-musl.tar.gz" -o /tmp/opencode.tar.gz \
+    && tar -xzf /tmp/opencode.tar.gz -C /usr/local/bin \
+    && chmod +x /usr/local/bin/opencode
 
 FROM docker:dind
+
+# Cleanup раннера чистит неиспользуемые образы (`docker image prune -af`).
+# Метка защищает базовый образ юнита от удаления между пересборками.
+LABEL unitman.keep=true
 
 RUN apk add --no-cache openssl
 RUN apk add --no-cache gettext-envsubst

@@ -34,7 +34,10 @@ func RunCleanup(ctx context.Context, workdir string) {
 // cleanupOnce выполняет один цикл очистки. Ошибки логируются, цикл продолжается.
 func cleanupOnce(ctx context.Context, workdir string) {
 	commands := [][]string{
-		{"docker", "image", "prune", "-af"},
+		// label!=... сохраняет образы с меткой unitman.keep=true: без фильтра
+		// prune -a удаляет базовый dind-образ юнита, который не используется
+		// ни одним контейнером напрямую, и следующая сборка тянет старую версию.
+		{"docker", "image", "prune", "-af", "--filter", "label!=unitman.keep=true"},
 		{"docker", "builder", "prune", "-af"},
 	}
 
