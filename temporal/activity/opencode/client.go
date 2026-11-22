@@ -35,8 +35,16 @@ type OpenCodeRequest struct {
 	Messages  []Replika
 	// Workspace переключает CLI executor на каталог /workspace.
 	Workspace bool
-	// ReadOnly добавляет в промпт запрет на git commit и git push.
+	// ReadOnly запрещает ход писать в git (permission bash git
+	// commit/push=deny и инструкция в промпте). Включается у любого
+	// read-only хода: и по юниту, и по workspace.
 	ReadOnly bool
+	// DenyEdits дополнительно запрещает правку файлов (permission
+	// edit=deny и инструкция в промпте). Устанавливается только у
+	// read-only хода по юниту: правки файлов разрешены исключительно
+	// при включённом редактировании (15.7-а). У read-only workspace
+	// правки в рабочей копии разрешены — запрещена запись в git.
+	DenyEdits bool
 }
 
 // OpenCodeAnswer — нормализованный ответ OpenCode.

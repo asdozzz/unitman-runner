@@ -110,6 +110,111 @@ func TestCLIConfigJSONUsesCustomProvider(t *testing.T) {
 	}
 }
 
+func TestCLIConfigJSONReadOnlyDeniesEditsAndGitWrite(t *testing.T) {
+	// Read-only ход по юниту: запрещены правка файлов и запись в git.
+	readOnly := OpenCodeRequest{
+		URL:       "https://example.test/v1",
+		Model:     "gpt-5-codex",
+		APIKey:    "sk-secret",
+		ReadOnly:  true,
+		DenyEdits: true,
+	}
+
+	raw, err := cliConfigJSON(readOnly)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var config struct {
+		Permission *struct {
+			Edit string            `json:"edit"`
+			Bash map[string]string `json:"bash"`
+		} `json:"permission"`
+	}
+	if err := json.Unmarshal([]byte(raw), &config); err != nil {
+		t.Fatalf("cannot decode config: %v", err)
+	}
+
+	if config.Permission == nil {
+		t.Fatalf("read-only config must contain permission section: %s", raw)
+	}
+	if config.Permission.Edit != "deny" {
+		t.Fatalf("edit must be denied for unit read-only turn: %s", raw)
+	}
+	for _, command := range []string{"git push*", "git commit*"} {
+		if config.Permission.Bash[command] != "deny" {
+			t.Fatalf("bash %q must be denied: %s", command, raw)
+		}
+	}
+
+	// Read-only workspace: правки в рабочей копии разрешены, запись в git нет.
+	workspace := readOnly
+	workspace.DenyEdits = false
+
+	raw, err = cliConfigJSON(workspace)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Повторный unmarshal в ту же структуру: сбрасываем Permission, чтобы
+	// значения прошлого разбора не выдали себя за значения этого.
+	config.Permission = nil
+	if err := json.Unmarshal([]byte(raw), &config); err != nil {
+		t.Fatalf("cannot decode config: %v", err)
+	}
+	if config.Permission == nil {
+		t.Fatalf("read-only workspace config must contain permission section: %s", raw)
+	}
+	if config.Permission.Edit != "" {
+		t.Fatalf("edit must stay allowed for read-only workspace: %s", raw)
+	}
+	if config.Permission.Bash["git push*"] != "deny" || config.Permission.Bash["git commit*"] != "deny" {
+		t.Fatalf("git write must be denied for read-only workspace: %s", raw)
+	}
+
+	// RW-ход не содержит секцию permission: правки разрешены по умолчанию.
+	rw := readOnly
+	rw.ReadOnly = false
+	rw.DenyEdits = false
+
+	raw, err = cliConfigJSON(rw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(raw, "permission") {
+		t.Fatalf("rw config must not contain permission section: %s", raw)
+	}
+}
+
+func TestCLIPromptReadOnlyForbidsFileEdits(t *testing.T) {
+	unit := OpenCodeRequest{
+		URL:       "https://example.test/v1",
+		Model:     "gpt-5-codex",
+		APIKey:    "sk-secret",
+		ReadOnly:  true,
+		DenyEdits: true,
+		Messages:  []Replika{{Role: "user", Text: "проверь тесты"}},
+	}
+
+	prompt := cliPrompt(unit, false)
+	if !strings.Contains(prompt, cliReadOnlyInstruction) {
+		t.Fatalf("read-only instruction is missing: %q", prompt)
+	}
+	if strings.Contains(cliReadOnlyInstruction, "Можно менять файлы") {
+		t.Fatalf("read-only instruction must not allow file edits: %q", cliReadOnlyInstruction)
+	}
+
+	workspace := unit
+	workspace.DenyEdits = false
+
+	prompt = cliPrompt(workspace, false)
+	if !strings.Contains(prompt, cliGitWriteInstruction) {
+		t.Fatalf("git write instruction is missing: %q", prompt)
+	}
+	if strings.Contains(prompt, cliReadOnlyInstruction) {
+		t.Fatalf("workspace read-only prompt must not forbid file edits: %q", prompt)
+	}
+}
+
 func TestCLIExecutorRunsOpenCodeInUnitContainer(t *testing.T) {
 	output := strings.Join([]string{
 		`{"type":"step_start","sessionID":"ses_1","part":{"id":"p1","type":"step-start"}}`,
@@ -165,6 +270,43 @@ func TestCLIExecutorRunsOpenCodeInUnitContainer(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(gotOpts.Env, "\n"), "OPENCODE_DISABLE_AUTOUPDATE=1") {
 		t.Fatalf("autoupdate env is missing: %#v", gotOpts.Env)
+	}
+}
+
+func TestCLIExecutorPassesReadOnlyPermissionToContainer(t *testing.T) {
+	var (
+		gotCommand string
+		gotOpts    unit.UnitExecOptions
+	)
+	executor := &CLIExecutor{ExecUnit: func(_ context.Context, _ string, command string, opts unit.UnitExecOptions) (string, error) {
+		gotCommand = command
+		gotOpts = opts
+		return `{"type":"text","sessionID":"ses_1","part":{"id":"p1","type":"text","text":"Готово"}}`, nil
+	}}
+
+	_, err := executor.Execute(context.Background(), OpenCodeRequest{
+		URL:       "https://example.test/v1",
+		Model:     "gpt-5-codex",
+		APIKey:    "sk-secret",
+		WorkDir:   "/work/unit",
+		ReadOnly:  true,
+		DenyEdits: true,
+		Messages:  []Replika{{Role: "user", Text: "привет"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	env := strings.Join(gotOpts.Env, "\n")
+	if !strings.Contains(env, `"permission"`) {
+		t.Fatalf("permission config is missing: %#v", gotOpts.Env)
+	}
+	if !strings.Contains(env, `"edit":"deny"`) {
+		t.Fatalf("edit must be denied in config: %#v", gotOpts.Env)
+	}
+	// Инструкция уходит в промпте — позиционным аргументом команды.
+	if !strings.Contains(gotCommand, cliReadOnlyInstruction) {
+		t.Fatalf("read-only instruction is missing in prompt: %q", gotCommand)
 	}
 }
 

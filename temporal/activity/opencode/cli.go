@@ -164,8 +164,15 @@ func shellQuote(value string) string {
 // хранит историю, поэтому отправляем только текущую реплику.
 func cliPrompt(req OpenCodeRequest, continueSession bool) string {
 	prompt := cliPromptBase(req, continueSession)
-	if req.ReadOnly {
+	switch {
+	case req.DenyEdits:
+		// Read-only ход по юниту: правки файлов запрещены и на уровне
+		// permission-конфига, инструкция дублирует запрет словами.
 		prompt += "\n\n" + cliReadOnlyInstruction
+	case req.ReadOnly:
+		// Read-only workspace: правки в рабочей копии разрешены,
+		// запись в git запрещена.
+		prompt += "\n\n" + cliGitWriteInstruction
 	}
 	return prompt
 }
@@ -213,12 +220,37 @@ const cliQuestionInstruction = `Если для продолжения дейс�
 {"questions":[{"id":"q1","text":"текст вопроса","allowFreeText":true,"options":[{"id":"o1","label":"вариант","description":"пояснение"}]}]}
 Если вопрос допускает свободный ответ, установи allowFreeText = true.`
 
-// cliReadOnlyInstruction добавляется для read-only доступа (workspace или
-// юнит без прав редактирования).
-const cliReadOnlyInstruction = `Работа идёт в режиме read-only: запрещено выполнять git commit и git push. Можно менять файлы в рабочей копии, но нельзя создавать коммиты и отправлять их в удалённый репозиторий.`
+// cliReadOnlyInstruction — для read-only хода по юниту: правки файлов
+// запрещены (и на уровне permission-конфига, см. cliPermission), диагностика
+// остаётся доступна (plan §3.4).
+const cliReadOnlyInstruction = `Работа идёт в режиме read-only: запрещено изменять файлы, выполнять git commit и git push. Можно читать код, запускать тесты, линтеры и другие диагностические команды.`
+
+// cliGitWriteInstruction — для read-only workspace: правки в рабочей копии
+// разрешены, запись в git запрещена.
+const cliGitWriteInstruction = `Работа идёт в режиме read-only: запрещено выполнять git commit и git push. Можно менять файлы в рабочей копии, но нельзя создавать коммиты и отправлять их в удалённый репозиторий.`
 
 type cliConfig struct {
-	Provider map[string]cliProvider `json:"provider"`
+	Provider   map[string]cliProvider `json:"provider"`
+	Permission *cliPermission         `json:"permission,omitempty"`
+}
+
+// cliPermission — жёсткое ограничение прав read-only хода на уровне
+// opencode, а не только словами в промпте (plan §3.4).
+type cliPermission struct {
+	// Edit запрещает инструменты правки файлов (edit/write/patch).
+	Edit string `json:"edit,omitempty"`
+	// Bash точечно запрещает запись в git; команды, не совпавшие ни с
+	// одним паттерном, остаются разрешёнными по умолчанию — диагностика
+	// (тесты, линтеры) доступна.
+	Bash map[string]string `json:"bash,omitempty"`
+}
+
+// cliGitWriteDeny — bash-правила записи в git для read-only хода. Паттерны
+// заданы без `*`-fallback, чтобы при любом порядке разбора паттернов в
+// opencode всё, кроме git-записи, осталось разрешённым по умолчанию.
+var cliGitWriteDeny = map[string]string{
+	"git push*":   "deny",
+	"git commit*": "deny",
 }
 
 type cliProvider struct {
@@ -256,6 +288,19 @@ func cliConfigJSON(req OpenCodeRequest) (string, error) {
 				},
 			},
 		},
+	}
+
+	// Read-only ход ограничивается на уровне opencode, а не только
+	// инструкцией в промпте (plan §3.4): запись в git запрещена у любого
+	// read-only хода, правка файлов — дополнительно у read-only хода по юниту.
+	if req.ReadOnly || req.DenyEdits {
+		config.Permission = &cliPermission{
+			Bash: cliGitWriteDeny,
+		}
+	}
+
+	if req.DenyEdits {
+		config.Permission.Edit = "deny"
 	}
 
 	raw, err := json.Marshal(config)

@@ -287,6 +287,10 @@ func (a *Activities) VipolnitHodOpenCodeActivity(ctx context.Context, cmd HodCom
 		Messages:  sobratSoobsheniya(cmd),
 		Workspace: strings.TrimSpace(cmd.WorkspaceID) != "",
 		ReadOnly:  effectiveReadOnly,
+		// Правки файлов запрещены только у read-only хода по юниту
+		// (15.7-а): у read-only workspace правки в рабочей копии
+		// разрешены, запрещена запись в git.
+		DenyEdits: isUnitSession && effectiveReadOnly,
 	})
 
 	if execErr != nil {
