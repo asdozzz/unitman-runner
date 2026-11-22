@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -144,6 +145,7 @@ func execCommand(ctx context.Context, workingDirectory string, app []string, tim
 
 	cmd := exec.Command(app[0], app[1:]...)
 	cmd.Dir = workingDirectory
+	applyEnvFileForCompose(cmd, workingDirectory, app)
 	// Ввод не поддерживаем: дочерний процесс читает из /dev/null и сразу получает EOF.
 	cmd.Stdin = nil
 	// Отдельная группа процессов, чтобы по таймауту завершить команду вместе с дочерними процессами.
@@ -206,6 +208,107 @@ func execCommand(ctx context.Context, workingDirectory string, app []string, tim
 	}
 
 	return outStr, nil
+}
+
+// applyEnvFileForCompose подмешивает в окружение дочернего процесса значения
+// из .env рабочего каталога для команд docker compose.
+//
+// docker compose даёт приоритет переменным процесса над .env, но воркер —
+// долгоживущий процесс: os.Setenv одной активности (например, проверка
+// контейнера чужого юнита) протекал в последующие compose-команды и разворачивал
+// контейнер юнита с чужим именем. Файл юнита — источник правды, поэтому для
+// compose-команд его значения переопределяют унаследованное окружение.
+func applyEnvFileForCompose(cmd *exec.Cmd, workingDirectory string, app []string) {
+	if workingDirectory == "" || !isComposeCommand(app) {
+		return
+	}
+
+	overrides, err := parseEnvFile(filepath.Join(workingDirectory, ".env"))
+	if err != nil || len(overrides) == 0 {
+		return
+	}
+
+	cmd.Env = envWithOverrides(os.Environ(), overrides)
+}
+
+// isComposeCommand определяет команды docker compose / docker-compose.
+func isComposeCommand(app []string) bool {
+	if len(app) < 2 {
+		return false
+	}
+
+	if app[0] == "docker" && app[1] == "compose" {
+		return true
+	}
+
+	return app[0] == "docker-compose"
+}
+
+// parseEnvFile читает простой .env (KEY=VALUE): комментарии и строки без
+// разделителя пропускаются, кавычки вокруг значения снимаются.
+func parseEnvFile(path string) (map[string]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	overrides := make(map[string]string)
+
+	for _, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(raw)
+		line = strings.TrimSpace(strings.TrimPrefix(line, "export "))
+
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		key, value, found := strings.Cut(line, "=")
+		if !found {
+			continue
+		}
+
+		key = strings.TrimSpace(key)
+		if key == "" || strings.ContainsAny(key, " \t") {
+			continue
+		}
+
+		overrides[key] = unquote(strings.TrimSpace(value))
+	}
+
+	return overrides, nil
+}
+
+// unquote снимает парные кавычки вокруг значения.
+func unquote(value string) string {
+	if len(value) >= 2 {
+		if (value[0] == '"' && value[len(value)-1] == '"') || (value[0] == '\'' && value[len(value)-1] == '\'') {
+			return value[1 : len(value)-1]
+		}
+	}
+
+	return value
+}
+
+// envWithOverrides строит окружение, в котором ключи из overrides заменяют
+// одноимённые ключи base, остальные наследуются.
+func envWithOverrides(base []string, overrides map[string]string) []string {
+	merged := make([]string, 0, len(base)+len(overrides))
+
+	for _, entry := range base {
+		if key, _, found := strings.Cut(entry, "="); found {
+			if _, ok := overrides[key]; ok {
+				continue
+			}
+		}
+
+		merged = append(merged, entry)
+	}
+
+	for key, value := range overrides {
+		merged = append(merged, key+"="+value)
+	}
+
+	return merged
 }
 
 func copyAndCapture(w io.Writer, r io.Reader) ([]byte, error) {

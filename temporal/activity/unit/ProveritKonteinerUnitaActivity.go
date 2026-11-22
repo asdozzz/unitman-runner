@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"runner/state"
 	"strings"
 	"time"
@@ -45,12 +44,9 @@ func ProveritKonteinerUnitaActivity(ctx context.Context, command ProveritKontein
 		return result, nil
 	}
 
-	err = os.Setenv("UNITMAN_UNIT_NAME", command.Name)
-	if err != nil {
-		result.Success = 1
-		return result, nil
-	}
-
+	// Имена юнита и проекта для compose-интерполяции берутся из .env рабочего
+	// каталога: мутация окружения процесса протекала между активностями
+	// и разворачивала контейнеры с чужими именами.
 	fmt.Println("ProveritKonteinerUnita:" + string(out))
 
 	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id

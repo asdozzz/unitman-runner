@@ -35,20 +35,9 @@ func makeSha1Sums(cache Cache, unitPath string) (bool, []string) {
 }
 
 func RestoreCache(ProjectName string, UnitName string, ProjectId string, UnitId string, caches []Cache) {
-	err := os.Setenv("UNITMAN_PROJECT_NAME", ProjectName)
-
-	if err != nil {
-		fmt.Println("error set project name ")
-		return
-	}
-
-	err = os.Setenv("UNITMAN_UNIT_NAME", UnitName)
-
-	if err != nil {
-		fmt.Println("error set project name ")
-		return
-	}
-
+	// Имена юнита и проекта для compose-интерполяции берутся из .env рабочего
+	// каталога: мутация окружения процесса протекала между активностями
+	// и разворачивала контейнеры с чужими именами.
 	currentPath, err := os.Getwd()
 	if err != nil {
 		return
@@ -119,20 +108,9 @@ func makeSumFromString(sumFiles string) string {
 }
 
 func MakeCache(ProjectName string, UnitName string, ProjectId string, UnitId string, caches []Cache) {
-	err := os.Setenv("UNITMAN_PROJECT_NAME", ProjectName)
-
-	if err != nil {
-		fmt.Println("error set project name ")
-		return
-	}
-
-	err = os.Setenv("UNITMAN_UNIT_NAME", UnitName)
-
-	if err != nil {
-		fmt.Println("error set project name ")
-		return
-	}
-
+	// Имена юнита и проекта для compose-интерполяции берутся из .env рабочего
+	// каталога: мутация окружения процесса протекала между активностями
+	// и разворачивала контейнеры с чужими именами.
 	currentPath, err := os.Getwd()
 	if err != nil {
 		return

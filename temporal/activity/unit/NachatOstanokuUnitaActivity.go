@@ -3,11 +3,12 @@ package unit
 import (
 	"context"
 	"encoding/json"
-	"go.temporal.io/sdk/activity"
 	"os"
 	"runner/temporal/activity/unit/model"
 	"strings"
 	"time"
+
+	"go.temporal.io/sdk/activity"
 )
 
 type NachatOstanovkuUnita struct {
@@ -53,18 +54,9 @@ func NachatOstanokuUnitaActivity(ctx context.Context, command NachatOstanovkuUni
 		return wrapResultatOstanovki(result), nil
 	}
 
-	err = os.Setenv("UNITMAN_PROJECT_NAME", command.ProjectName)
-	if err != nil {
-		result.Success = 0
-		return wrapResultatOstanovki(result), nil
-	}
-
-	err = os.Setenv("UNITMAN_UNIT_NAME", command.Name)
-	if err != nil {
-		result.Success = 0
-		return wrapResultatOstanovki(result), nil
-	}
-
+	// Имена юнита и проекта для compose-интерполяции берутся из .env рабочего
+	// каталога: мутация окружения процесса протекала между активностями
+	// и разворачивала контейнеры с чужими именами.
 	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
 
 	currentPath, err := os.Getwd()

@@ -66,24 +66,9 @@ func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (
 		return wrapResultatZapuska(result), nil
 	}
 
-	err = os.Setenv("UNITMAN_PROJECT_NAME", command.ProjectName)
-	if err != nil {
-		result.Success = 0
-		return wrapResultatZapuska(result), nil
-	}
-
-	err = os.Setenv("UNITMAN_UNIT_NAME", command.Name)
-	if err != nil {
-		result.Success = 0
-		return wrapResultatZapuska(result), nil
-	}
-
-	err = os.Setenv("UNITMAN_BRANCH_NAME", command.Branch)
-	if err != nil {
-		result.Success = 0
-		return wrapResultatZapuska(result), nil
-	}
-
+	// Имена юнита и проекта для compose-интерполяции берутся из .env рабочего
+	// каталога: мутация окружения процесса протекала между активностями
+	// и разворачивала контейнеры с чужими именами.
 	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
 
 	currentPath, err := os.Getwd()

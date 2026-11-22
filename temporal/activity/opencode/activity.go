@@ -156,12 +156,17 @@ type Vopros struct {
 
 // HodResult — результат одного хода. Questions всегда сериализуется как
 // массив (не null).
+//
+// ErrorMessage — фактический текст ошибки раннера/OpenCode. В отличие от
+// ErrorKey он не переводится и нужен, чтобы пользователь увидел причину,
+// а не общий «ход завершился ошибкой».
 type HodResult struct {
 	Success           bool     `json:"Success"`
 	Kind              string   `json:"Kind"`
 	Questions         []Vopros `json:"Questions"`
 	Answer            *string  `json:"Answer"`
 	ErrorKey          *string  `json:"ErrorKey"`
+	ErrorMessage      *string  `json:"ErrorMessage"`
 	ExternalSessionID *string  `json:"ExternalSessionId"`
 }
 
@@ -183,6 +188,16 @@ func errorResult(key string) HodResult {
 		Questions: []Vopros{},
 		ErrorKey:  &k,
 	}
+}
+
+// errorResultWithMessage добавляет к ошибке фактический текст причины.
+func errorResultWithMessage(key, message string) HodResult {
+	result := errorResult(key)
+	message = strings.TrimSpace(message)
+	if message != "" {
+		result.ErrorMessage = &message
+	}
+	return result
 }
 
 // ─── активность ──────────────────────────────────────────────────────────────
@@ -211,9 +226,10 @@ func (a *Activities) VipolnitHodOpenCodeActivity(ctx context.Context, cmd HodCom
 	// Именованные возвраты нужны, чтобы паника не утекла в Temporal.
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("opencode: panic in activity: %s", redact(fmt.Sprint(r), cmd.ApiKey))
+			message := fmt.Sprintf("panic: %s", redact(fmt.Sprint(r), cmd.ApiKey))
+			log.Printf("opencode: %s", message)
 			p.publish(ctx, true, false)
-			result = errorResult(ErrorKeyTurnFailed)
+			result = errorResultWithMessage(ErrorKeyTurnFailed, message)
 			err = nil
 		}
 	}()
@@ -221,7 +237,7 @@ func (a *Activities) VipolnitHodOpenCodeActivity(ctx context.Context, cmd HodCom
 	if a.OpenCode == nil {
 		log.Printf("opencode: executor is not configured")
 		p.publish(ctx, true, false)
-		return errorResult(ErrorKeyTurnFailed), nil
+		return errorResultWithMessage(ErrorKeyTurnFailed, "opencode executor is not configured"), nil
 	}
 
 	// Каталоги юнитов вычисляет раннер: бэкенд передаёт только ProjectId/UnitId.
@@ -230,7 +246,7 @@ func (a *Activities) VipolnitHodOpenCodeActivity(ctx context.Context, cmd HodCom
 	if dirErr != nil {
 		log.Printf("opencode: cannot resolve workspace: %v", dirErr)
 		p.publish(ctx, true, false)
-		return errorResult(ErrorKeyUnitDirectoryNotFound), nil
+		return errorResultWithMessage(ErrorKeyUnitDirectoryNotFound, dirErr.Error()), nil
 	}
 
 	// Режим хода по юниту: read-only ход не должен иметь push-креденшелов,
@@ -295,7 +311,11 @@ func (a *Activities) VipolnitHodOpenCodeActivity(ctx context.Context, cmd HodCom
 		}
 
 		p.publish(ctx, true, false)
-		return errorResult(key), nil
+
+		// execErr в CLI-исполнителе уже содержит stderr/вывод OpenCode.
+		// Сохраняем его как факт, чтобы бэкенд и UI показали реальную причину.
+		message := obrezatTekst(redact(execErr.Error(), cmd.ApiKey))
+		return errorResultWithMessage(key, message), nil
 	}
 
 	// Продолжаем уже известную сессию, даже если клиент не вернул её в ответе:
@@ -572,6 +592,11 @@ func sanitizeResult(result *HodResult, secret string) {
 	if result.Answer != nil {
 		answer := redact(*result.Answer, secret)
 		result.Answer = &answer
+	}
+
+	if result.ErrorMessage != nil {
+		message := redact(*result.ErrorMessage, secret)
+		result.ErrorMessage = &message
 	}
 
 	if result.ExternalSessionID != nil {

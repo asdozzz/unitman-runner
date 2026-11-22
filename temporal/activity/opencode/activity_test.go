@@ -121,10 +121,14 @@ func TestActivityUnexpectedResponse(t *testing.T) {
 	if result.Kind != KindError || result.ErrorKey == nil || *result.ErrorKey != ErrorKeyUnexpectedKind {
 		t.Fatalf("unexpected result: %+v", result)
 	}
+	if result.ErrorMessage == nil || !strings.Contains(*result.ErrorMessage, "no choices") {
+		t.Fatalf("real error text must be preserved: %+v", result.ErrorMessage)
+	}
 }
 
 func TestActivityExecutionError(t *testing.T) {
-	executor := &fakeExecutor{err: errors.New("connection refused: " + validCommand().ApiKey)}
+	secret := validCommand().ApiKey
+	executor := &fakeExecutor{err: errors.New("connection refused: " + secret)}
 	acts := &Activities{OpenCode: executor}
 
 	result, err := acts.VipolnitHodOpenCodeActivity(context.Background(), validCommand())
@@ -136,6 +140,12 @@ func TestActivityExecutionError(t *testing.T) {
 	}
 	if result.Questions == nil || len(result.Questions) != 0 {
 		t.Fatalf("questions must be an empty array: %#v", result.Questions)
+	}
+	if result.ErrorMessage == nil || !strings.Contains(*result.ErrorMessage, "connection refused") {
+		t.Fatalf("real error text must be preserved: %+v", result.ErrorMessage)
+	}
+	if strings.Contains(*result.ErrorMessage, secret) {
+		t.Fatalf("api key must be redacted: %q", *result.ErrorMessage)
 	}
 }
 
@@ -149,6 +159,9 @@ func TestActivityPanicBecomesError(t *testing.T) {
 	}
 	if result.Kind != KindError || result.ErrorKey == nil || *result.ErrorKey != ErrorKeyTurnFailed {
 		t.Fatalf("unexpected result: %+v", result)
+	}
+	if result.ErrorMessage == nil || !strings.Contains(*result.ErrorMessage, "panic") {
+		t.Fatalf("panic text must be preserved: %+v", result.ErrorMessage)
 	}
 }
 
@@ -188,6 +201,9 @@ func TestActivityWithoutExecutorReturnsError(t *testing.T) {
 	}
 	if result.Kind != KindError || result.ErrorKey == nil || *result.ErrorKey != ErrorKeyTurnFailed {
 		t.Fatalf("unexpected result: %+v", result)
+	}
+	if result.ErrorMessage == nil || !strings.Contains(*result.ErrorMessage, "not configured") {
+		t.Fatalf("executor error text must be preserved: %+v", result.ErrorMessage)
 	}
 }
 
@@ -327,6 +343,9 @@ func TestActivityMissingUnitDirectoryReturnsError(t *testing.T) {
 	}
 	if result.Questions == nil || len(result.Questions) != 0 {
 		t.Fatalf("questions must be an empty array: %#v", result.Questions)
+	}
+	if result.ErrorMessage == nil || !strings.Contains(*result.ErrorMessage, "not found") {
+		t.Fatalf("missing directory text must be preserved: %+v", result.ErrorMessage)
 	}
 	if executor.calls != 0 {
 		t.Fatal("open code must not run when any unit directory is missing")
@@ -488,6 +507,18 @@ func TestHodResultSerializationNeverHasNullQuestions(t *testing.T) {
 		if !strings.Contains(string(data), `"Questions":[]`) {
 			t.Fatalf("Questions must be []: %s", data)
 		}
+	}
+}
+
+func TestHodResultSerializationIncludesErrorMessage(t *testing.T) {
+	result := errorResultWithMessage(ErrorKeyTurnFailed, "opencode: connection refused")
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	if !strings.Contains(string(data), `"ErrorMessage":"opencode: connection refused"`) {
+		t.Fatalf("ErrorMessage must be serialized: %s", data)
 	}
 }
 

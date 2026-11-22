@@ -66,12 +66,9 @@ func NachatSbrosPodgotovkiUnitaActivity(ctx context.Context, command NachatSbros
 		return wrapResultatSbrosaPodgotovki(result), nil
 	}
 
-	err = os.Setenv("UNITMAN_UNIT_NAME", command.Name)
-	if err != nil {
-		result.Success = 0
-		return wrapResultatSbrosaPodgotovki(result), nil
-	}
-
+	// Имена юнита и проекта для compose-интерполяции берутся из .env рабочего
+	// каталога: мутация окружения процесса протекала между активностями
+	// и разворачивала контейнеры с чужими именами.
 	filepath := "./projects/" + command.ProjectId + "/units/" + command.UnitId
 
 	currentPath, err := os.Getwd()
