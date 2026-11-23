@@ -14,6 +14,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"runner/threat"
 )
 
 const (
@@ -40,6 +42,9 @@ type HealthPayload struct {
 	DockerStats string `json:"dockerStats"`
 	MemInfo     string `json:"memInfo"`
 	Unixtime    int64  `json:"unixtime"`
+	// Resources — структурированный снимок ресурсов сервера (CPU, память,
+	// диски, Docker) с уровнем угрозы. Старые backend'ы поле игнорируют.
+	Resources *threat.Snapshot `json:"resources,omitempty"`
 }
 
 // Notification — уведомление о расхождении состояния контейнера юнита.

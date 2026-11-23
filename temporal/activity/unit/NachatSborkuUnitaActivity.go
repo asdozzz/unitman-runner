@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
+	"runner/threat"
 	"strings"
 	"time"
 )
@@ -31,6 +32,13 @@ func NachatSborkuUnitaActivity(ctx context.Context, command NachatSborkuUnita) (
 		Success: 1,
 		Steps:   []model.Step{},
 		Config:  "",
+	}
+
+	// Ресурсоёмкая активность: при уровне блокировки не запускаем сборку.
+	if blocked, message := threat.BlockedMessage(); blocked {
+		result.Steps = model.AddStepToSteps(result.Steps, resursnayaProverkaStep, message, fmt.Errorf("%s", message), time.Now().Unix())
+		result.Success = 0
+		return result, nil
 	}
 
 	unixtimeStart := time.Now().Unix()

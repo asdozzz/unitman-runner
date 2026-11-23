@@ -11,9 +11,13 @@ import (
 	"path"
 	"runner/temporal/activity/project/model"
 	"runner/temporal/utils"
+	"runner/threat"
 	"strings"
 	"time"
 )
+
+// resursnayaProverkaStep — название шага проверки ресурсов сервера.
+const resursnayaProverkaStep = "проверить ресурсы сервера"
 
 type InitProjectCommand struct {
 	ProjectId      string
@@ -30,6 +34,19 @@ func InitProjectActivity(ctx context.Context, command InitProjectCommand) (*Init
 	result := &InitProjectResult{
 		Success: true,
 		Steps:   []model.Step{},
+	}
+
+	// Клонирование проекта — ресурсоёмкая операция (диск и сеть).
+	if blocked, message := threat.BlockedMessage(); blocked {
+		result.Success = false
+		result.Steps = append(result.Steps, model.Step{
+			Command:       resursnayaProverkaStep,
+			Response:      message,
+			Success:       false,
+			Unixtime:      time.Now().Unix(),
+			UnixtimeStart: time.Now().Unix(),
+		})
+		return result, nil
 	}
 
 	unixtimeStart := time.Now().Unix()

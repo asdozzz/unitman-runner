@@ -9,6 +9,7 @@ import (
 	"runner/state"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
+	"runner/threat"
 	"strings"
 	"time"
 )
@@ -42,6 +43,13 @@ func NachatObnovlenieUnitaActivity(ctx context.Context, command NachatObnovlenie
 		}
 		state.RecordActivityResult("obnovlenie", command.ProjectId, command.Id, command.Name, command.ProjectName, success)
 	}()
+
+	// Ресурсоёмкая активность: при уровне блокировки не перезапускаем юнит.
+	if blocked, message := threat.BlockedMessage(); blocked {
+		result.Steps = model.AddStepToSteps(result.Steps, resursnayaProverkaStep, message, fmt.Errorf("%s", message), time.Now().Unix())
+		result.Success = 0
+		return result, nil
+	}
 
 	unixtimeStart := time.Now().Unix()
 	out, err := json.Marshal(command)

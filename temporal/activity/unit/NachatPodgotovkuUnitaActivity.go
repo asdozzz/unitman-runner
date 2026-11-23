@@ -9,6 +9,7 @@ import (
 	"runner/state"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
+	"runner/threat"
 	"strings"
 	"time"
 
@@ -72,6 +73,13 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		}
 		state.RecordActivityResult("podgotovka", command.ProjectId, command.Id, command.Name, command.ProjectName, success)
 	}()
+
+	// Ресурсоёмкая активность: при уровне блокировки не поднимаем контейнеры.
+	if blocked, message := threat.BlockedMessage(); blocked {
+		result.Steps = model.AddStepToSteps(result.Steps, resursnayaProverkaStep, message, fmt.Errorf("%s", message), time.Now().Unix())
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
+	}
 
 	logCommand := command
 	logCommand.StorageUrl = RedactStorageURL(command.StorageUrl)

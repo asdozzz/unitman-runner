@@ -42,8 +42,10 @@ func TestRunCleanupPrunesImagesAndBuilderOnly(t *testing.T) {
 		t.Fatalf("expected exactly 2 docker invocations, got %d: %v", len(lines), lines)
 	}
 
-	if lines[0] != "image prune -af" {
-		t.Errorf("first command = %q, want %q", lines[0], "image prune -af")
+	// Образы с меткой unitman.keep=true не удаляются: фильтр защищает базу
+	// юнит-образов от преждевременной очистки.
+	if lines[0] != "image prune -af --filter label!=unitman.keep=true" {
+		t.Errorf("first command = %q, want %q", lines[0], "image prune -af --filter label!=unitman.keep=true")
 	}
 	if lines[1] != "builder prune -af" {
 		t.Errorf("second command = %q, want %q", lines[1], "builder prune -af")

@@ -131,6 +131,7 @@ func Init(config config.Configuration) {
 	defer stop()
 
 	go monitor.RunHealth(ctx, store, monitorClient, workdir)
+	go monitor.RunResources(ctx, workdir)
 	go monitor.RunReconciler(ctx, store, monitorClient, workdir)
 	go monitor.RunCleanup(ctx, workdir)
 

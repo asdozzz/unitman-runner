@@ -8,6 +8,7 @@ import (
 
 	"runner/state"
 	"runner/temporal/utils"
+	"runner/threat"
 )
 
 const (
@@ -50,6 +51,13 @@ func sendHealthOnce(ctx context.Context, client *Client, workdir string, api *do
 		return
 	}
 
+	// Снимок ресурсов собирается отдельным циклом (RunResources) и здесь
+	// только читается: медленный Docker API не задерживает health-push.
+	var resources *threat.Snapshot
+	if current := threat.Current(); current.CollectedAt > 0 {
+		resources = &current
+	}
+
 	payload := HealthPayload{
 		RunnerID:  client.RunnerID,
 		TaskQueue: client.TaskQueue,
@@ -58,6 +66,7 @@ func sendHealthOnce(ctx context.Context, client *Client, workdir string, api *do
 		DockerStats: collectUnitDockerStats(ctx, workdir, api),
 		MemInfo:     readMemInfo(),
 		Unixtime:    time.Now().Unix(),
+		Resources:   resources,
 	}
 
 	if err := client.SendHealth(ctx, payload); err != nil {

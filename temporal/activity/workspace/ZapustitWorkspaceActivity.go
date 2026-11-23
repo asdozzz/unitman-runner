@@ -11,6 +11,7 @@ import (
 
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
+	"runner/threat"
 )
 
 // urlUserInfoRe маскирует учётные данные в URL внутри текста вывода.
@@ -48,6 +49,17 @@ func ZapustitWorkspaceActivity(
 			result.Steps = []model.Step{}
 		}
 	}()
+
+	// Запуск workspace поднимает контейнеры и клонирует проекты — ресурсоёмкая
+	// операция. Остановка и удаление остаются разрешёнными, чтобы можно было
+	// освободить ресурсы.
+	if blocked, message := threat.BlockedMessage(); blocked {
+		result.Success = 0
+		tracker.add(resursnayaProverkaStep, message, errors.New(message), time.Now())
+		tracker.publish(true)
+		result.Steps = []model.Step{}
+		return result, nil
+	}
 
 	if err := validateWorkspaceID(command.WorkspaceId); err != nil {
 		result.Success = 0

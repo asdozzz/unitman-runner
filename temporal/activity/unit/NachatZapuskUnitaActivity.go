@@ -3,9 +3,11 @@ package unit
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"runner/state"
 	"runner/temporal/activity/unit/model"
+	"runner/threat"
 	"strings"
 	"time"
 
@@ -59,6 +61,13 @@ func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (
 		}
 		state.RecordActivityResult("zapusk", command.ProjectId, command.Id, command.Name, command.ProjectName, success)
 	}()
+
+	// Ресурсоёмкая активность: при уровне блокировки не запускаем юнит.
+	if blocked, message := threat.BlockedMessage(); blocked {
+		result.Steps = model.AddStepToSteps(result.Steps, resursnayaProverkaStep, message, errors.New(message), time.Now().Unix())
+		result.Success = 0
+		return wrapResultatZapuska(result), nil
+	}
 
 	_, err = json.Marshal(command)
 	if err != nil {

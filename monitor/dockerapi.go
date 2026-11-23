@@ -95,6 +95,90 @@ type containerStats struct {
 	} `json:"memory_stats"`
 }
 
+// dockerServerInfo — подмножество ответа GET /info.
+type dockerServerInfo struct {
+	DockerRootDir string `json:"DockerRootDir"`
+	NCPU          int    `json:"NCPU"`
+	MemTotal      int64  `json:"MemTotal"`
+}
+
+// dockerSystemDF — подмножество ответа GET /system/df.
+// Размеры приходят числами (в отличие от humanized-вывода `docker system df`).
+type dockerSystemDF struct {
+	LayersSize int64 `json:"LayersSize"`
+	Images     []struct {
+		Size int64 `json:"Size"`
+	} `json:"Images"`
+	Containers []struct {
+		SizeRw int64 `json:"SizeRw"`
+	} `json:"Containers"`
+	Volumes []struct {
+		UsageData *struct {
+			Size int64 `json:"Size"`
+		} `json:"UsageData"`
+	} `json:"Volumes"`
+	BuildCache []struct {
+		Size int64 `json:"Size"`
+	} `json:"BuildCache"`
+}
+
+// containersSize суммирует записываемый слой всех контейнеров.
+func (d *dockerSystemDF) containersSize() int64 {
+	var total int64
+
+	for _, container := range d.Containers {
+		total += container.SizeRw
+	}
+
+	return total
+}
+
+// volumesSize суммирует занятое место томов.
+func (d *dockerSystemDF) volumesSize() int64 {
+	var total int64
+
+	for _, volume := range d.Volumes {
+		if volume.UsageData == nil {
+			continue
+		}
+
+		total += volume.UsageData.Size
+	}
+
+	return total
+}
+
+// buildCacheSize суммирует кэш сборки.
+func (d *dockerSystemDF) buildCacheSize() int64 {
+	var total int64
+
+	for _, entry := range d.BuildCache {
+		total += entry.Size
+	}
+
+	return total
+}
+
+// serverInfo запрашивает у daemon сведения о хосте (каталог Docker и т.п.).
+func (c *dockerAPIClient) serverInfo(ctx context.Context) (*dockerServerInfo, error) {
+	var out dockerServerInfo
+	if err := c.getJSON(ctx, "/info", &out); err != nil {
+		return nil, err
+	}
+
+	return &out, nil
+}
+
+// systemDiskUsage запрашивает занятое место Docker по типам данных.
+func (c *dockerAPIClient) systemDiskUsage(ctx context.Context) (*dockerSystemDF, error) {
+	var out dockerSystemDF
+	if err := c.getJSON(ctx, "/system/df", &out); err != nil {
+		return nil, err
+	}
+
+	return &out, nil
+}
+
 // inspectContainer запрашивает у daemon настройки контейнера.
 func (c *dockerAPIClient) inspectContainer(ctx context.Context, name string) (*containerInspect, error) {
 	var out containerInspect

@@ -10,6 +10,7 @@ import (
 
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
+	"runner/threat"
 
 	"go.temporal.io/sdk/activity"
 )
@@ -596,6 +597,13 @@ func IzmenitRezhimRedaktoraUnitaActivity(
 		ResponseId: activity.GetInfo(ctx).WorkflowExecution.ID,
 	}
 
+	// Пересоздание IDE-сайдкара — ресурсоёмкая операция.
+	if blocked, message := threat.BlockedMessage(); blocked {
+		result.Steps = model.AddStepToSteps(result.Steps, resursnayaProverkaStep, message, fmt.Errorf("%s", message), time.Now().Unix())
+		result.Success = 0
+		return result, nil
+	}
+
 	mode := NormalizeRezhimRedaktora(command.Mode)
 
 	unixtimeStart := time.Now().Unix()
@@ -648,6 +656,13 @@ func PodgotovitSessiyuRedaktoraActivity(
 		Success:    1,
 		Steps:      []model.Step{},
 		ResponseId: activity.GetInfo(ctx).WorkflowExecution.ID,
+	}
+
+	// Пересоздание IDE-сайдкара — ресурсоёмкая операция.
+	if blocked, message := threat.BlockedMessage(); blocked {
+		result.Steps = model.AddStepToSteps(result.Steps, resursnayaProverkaStep, message, fmt.Errorf("%s", message), time.Now().Unix())
+		result.Success = 0
+		return result, nil
 	}
 
 	mode := NormalizeRezhimRedaktora(command.Mode)

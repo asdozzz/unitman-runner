@@ -41,6 +41,10 @@
 | `RUNNER_WORK_DIR` | Рабочий каталог раннера, корень раскладки `projects/<ProjectId>/units/<UnitId>` | `os.Getwd()` |
 | `RUNNER_CALLBACK_SECRET` | Секрет для HMAC-подписи запросов на backend (заголовок `X-Runner-Signature`) | пусто (без подписи) |
 | `RUNNER_BACKEND_URL` | Базовый URL backend unitman | `ApiHost` из `config.json` |
+| `RUNNER_RESOURCES_INTERVAL_SECONDS` | Период сбора снимка ресурсов (CPU, память, диски, Docker) | `30` |
+| `RUNNER_THREAT_WARNING_PERCENT` | Жёлтый порог потребления памяти/диска | `70` |
+| `RUNNER_THREAT_CRITICAL_PERCENT` | Красный порог потребления памяти/диска | `85` |
+| `RUNNER_THREAT_BLOCKER_PERCENT` | Чёрный порог: блокировка ресурсоёмких активностей | `90` |
 
 Пустые значения трактуются как «переменная не задана» — применяется значение по
 умолчанию.
@@ -49,7 +53,8 @@
 
 | Цикл | Интервал | Что делает |
 |---|---|---|
-| Health-push | 1 минута | Отправляет `docker stats` (для юнитов `MemPerc`/`MemUsage` пересчитаны от лимита памяти), `/proc/meminfo`, `runnerId`, `taskQueue`, `unixtime` на `/api/runner/health`. |
+| Resources | 30 секунд | Собирает снимок ресурсов хоста: CPU (`/proc/stat`, `/proc/loadavg`), память (`/proc/meminfo`), диски (`statfs` для `/`, рабочего каталога и `DockerRootDir`), занятое Docker место (`/system/df`), и публикует его в пакет `threat`. |
+| Health-push | 1 минута | Отправляет `docker stats` (для юнитов `MemPerc`/`MemUsage` пересчитаны от лимита памяти), `/proc/meminfo`, `resources` (снимок с уровнями), `runnerId`, `taskQueue`, `unixtime` на `/api/runner/health`. |
 | Reconciler | 10 минут | Сверяет ожидаемое состояние из БД с фактическим (`docker ps`), отправляет уведомления о расхождениях и восстановлениях. |
 | Bootstrap | один раз при старте (внутри reconciler) | Обходит `projects/*/units/*`, читает `.env` и создаёт записи состояния для существующих юнитов. |
 | Cleanup | 2 часа | Выполняет `docker image prune -af` и `docker builder prune -af`. |
@@ -66,6 +71,15 @@
 - **Без спама уведомлений.** Для каждого юнита хранится `lastNotifiedActual` и
   `lastNotifiedAt`. Повторное уведомление об одном и том же расхождении
   отправляется не чаще, чем раз в 30 минут.
+- **Блокировка при исчерпании ресурсов.** Снимок ресурсов несёт уровни
+  `ok` / `warning` (≥70%) / `critical` (≥85%) / `blocker` (≥90%) по памяти и
+  каждому диску; общий уровень — худший из них. На уровне `blocker`
+  раннер отказывает ресурсоёмким активностям (сборка, подготовка, запуск и
+  обновление юнита, IDE-сессия, инициализация проекта, запуск workspace) с
+  шагом «проверить ресурсы сервера». Остановка, удаление, prune и read-only
+  проверки остаются разрешёнными, чтобы ресурсы можно было освободить.
+  Backend дополнительно предпроверяет уровень в `RunnerApi` и возвращает
+  локализованную ошибку `runner.resources.blocker`.
 - **Статистика памяти относительно лимита.** Базой health-push остаётся вывод
   `docker stats --no-stream --format json` (CPU, сеть, перечень контейнеров).
   Для контейнеров юнитов (`<UNITMAN_UNIT_NAME>.<UNITMAN_PROJECT_NAME>`) раннер
