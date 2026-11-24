@@ -19,11 +19,6 @@ services:
       file: common-services.yml
       service: grafana
 
-  unitman-registry:
-    extends:
-      file: common-services.yml
-      service: unitman-registry
-
 networks:
   default:
     external: true

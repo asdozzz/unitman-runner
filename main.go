@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -75,32 +76,60 @@ func main() {
 	}
 }
 
+// runInit — интерактивный wizard: спрашивает только host backend-а,
+// регистрирует раннер на публичном эндпоинте и сохраняет config.json.
 func runInit(in io.Reader, out io.Writer, args []string) error {
 	host := ""
 	if len(args) > 0 {
 		host = strings.TrimSpace(args[0])
 	}
+	if len(args) > 1 {
+		return fmt.Errorf("лишние аргументы: %v", args[1:])
+	}
+
+	reader := bufio.NewReader(in)
 
 	if host == "" {
-		fmt.Fprint(out, "Host [localhost]: ")
-		reader := bufio.NewReader(in)
-		line, err := reader.ReadString('\n')
-		if err != nil && err != io.EOF {
+		value, err := promptLine(reader, out, "Backend host [localhost]: ", "localhost")
+		if err != nil {
 			return err
 		}
-		host = strings.TrimSpace(line)
+		host = value
 	}
 
-	if host == "" {
-		host = "localhost"
-	}
+	// hostname не обязателен: при ошибке просто не отправляем его.
+	hostname, _ := os.Hostname()
 
-	if err := config.CreateConfig(config.ConfigTemplatePath, config.ConfigPath, host); err != nil {
+	configuration, err := config.RunInit(context.Background(), config.InitOptions{
+		Host:       host,
+		ConfigPath: config.ConfigPath,
+		Hostname:   hostname,
+		Version:    config.DefaultVersion,
+	})
+	if err != nil {
 		return err
 	}
 
-	fmt.Fprintf(out, "Создан %s для host %s\n", config.ConfigPath, host)
+	fmt.Fprintf(out, "Создан %s: runnerId=%s (taskQueue=runnerId)\n", config.ConfigPath, configuration.RunnerID)
 	return nil
+}
+
+// promptLine печатает подсказку и читает строку. Пустой ответ заменяется на
+// fallback.
+func promptLine(reader *bufio.Reader, out io.Writer, label, fallback string) (string, error) {
+	fmt.Fprint(out, label)
+
+	line, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", err
+	}
+
+	value := strings.TrimSpace(line)
+	if value == "" {
+		return fallback, nil
+	}
+
+	return value, nil
 }
 
 func parseStartArgs(args []string) (foreground bool, err error) {
@@ -396,13 +425,16 @@ func usage() {
 	fmt.Fprintln(os.Stderr, `Unitman runner
 
 Использование:
-  unitman-runner init [host]   создать config.json из config.json.dist
+  unitman-runner init [host]   зарегистрировать раннер и создать config.json
   unitman-runner start         запустить обработчик Temporal в фоне
   unitman-runner stop          остановить обработчик Temporal
   unitman-runner logs          показать последние 200 строк лога
   unitman-runner exec <ProjectId> <UnitId> <команда>
                                выполнить команду внутри контейнера юнита
 
-Если host не указан, init спросит его. Пустой ответ — localhost.
+init спрашивает только host backend-а и регистрируется на публичном
+эндпоинте /api/runner/register. Порты сервисов и per-runner секрет приходят в
+ответе и сохраняются в config.json (0600).
+Пустой ответ для host — localhost.
 start --foreground запускает обработчик в текущем процессе.`)
 }

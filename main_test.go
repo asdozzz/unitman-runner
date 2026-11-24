@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"runner/config"
+	"runner/monitor"
 )
 
 func TestParseStartArgs(t *testing.T) {
@@ -174,5 +177,28 @@ func TestTailFileMultipleChunks(t *testing.T) {
 	}
 	if !strings.HasPrefix(lines[len(lines)-1], "line 09999:") {
 		t.Fatalf("unexpected last line: %q", lines[len(lines)-1])
+	}
+}
+
+func TestMonitorClientUsesConfiguredIdentity(t *testing.T) {
+	const secret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	configuration := config.Configuration{
+		RunnerID:     "runner-abc",
+		RunnerSecret: secret,
+		RegistryHost: "registry.example.com:5000",
+	}
+
+	client := monitor.NewClient(configuration, "http://backend")
+	if client.RunnerID != "runner-abc" {
+		t.Errorf("runnerId = %q, want runner-abc", client.RunnerID)
+	}
+	if client.TaskQueue != "runner-abc" {
+		t.Errorf("taskQueue = %q, want runner-abc (always RunnerID)", client.TaskQueue)
+	}
+	if client.Secret != secret {
+		t.Errorf("secret = %q, want RunnerSecret", client.Secret)
+	}
+	if client.RegistryHost != "registry.example.com:5000" {
+		t.Errorf("registryHost = %q", client.RegistryHost)
 	}
 }

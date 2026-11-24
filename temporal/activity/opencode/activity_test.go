@@ -553,9 +553,10 @@ func TestObrezatTekst(t *testing.T) {
 }
 
 type capturedRequest struct {
-	body    saveStepsRequest
-	content string
-	sign    string
+	body     saveStepsRequest
+	content  string
+	runnerID string
+	sign     string
 }
 
 func TestProgressSenderSendsFullSnapshotAndSignature(t *testing.T) {
@@ -572,13 +573,18 @@ func TestProgressSenderSendsFullSnapshotAndSignature(t *testing.T) {
 			t.Errorf("cannot decode body: %v", err)
 		}
 		mu.Lock()
-		requests = append(requests, capturedRequest{body: body, content: body.StepsContent, sign: r.Header.Get("X-Runner-Signature")})
+		requests = append(requests, capturedRequest{
+			body:     body,
+			content:  body.StepsContent,
+			runnerID: r.Header.Get("X-Runner-Id"),
+			sign:     r.Header.Get("X-Runner-Signature"),
+		})
 		mu.Unlock()
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
-	p := newProgressSender(server.Client(), server.URL, "secret", "token-1")
+	p := newProgressSender(server.Client(), server.URL, "runner-1", "secret", "token-1")
 	started := time.Now().Add(-5 * time.Second)
 	p.addStep(context.Background(), "opencode model", "first", true, started)
 	p.addStep(context.Background(), "opencode model", "second", false, started)
@@ -596,6 +602,9 @@ func TestProgressSenderSendsFullSnapshotAndSignature(t *testing.T) {
 	}
 	if last.body.ResponseID != "token-1" {
 		t.Fatalf("unexpected response id: %s", last.body.ResponseID)
+	}
+	if last.runnerID != "runner-1" {
+		t.Fatalf("X-Runner-Id = %q, want runner-1", last.runnerID)
 	}
 	if last.sign != podpis("token-1", last.content, "secret") {
 		t.Fatal("signature does not match token+stepsContent")
@@ -636,7 +645,7 @@ func TestProgressSenderRetriesServerErrors(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := newProgressSender(server.Client(), server.URL, "", "token")
+	p := newProgressSender(server.Client(), server.URL, "runner-1", "", "token")
 	p.publish(context.Background(), true, true)
 
 	mu.Lock()
@@ -655,7 +664,7 @@ func TestProgressSenderDoesNotRetryBadRequest(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := newProgressSender(server.Client(), server.URL, "secret", "token")
+	p := newProgressSender(server.Client(), server.URL, "runner-1", "secret", "token")
 	p.publish(context.Background(), true, true)
 
 	if calls != 1 {
@@ -675,7 +684,7 @@ func TestProgressSenderEmptySnapshotIsArray(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := newProgressSender(server.Client(), server.URL, "", "token")
+	p := newProgressSender(server.Client(), server.URL, "runner-1", "", "token")
 	p.publish(context.Background(), true, false)
 
 	if content != "[]" {
@@ -691,7 +700,7 @@ func TestProgressSenderSendsFinalOnlyOnce(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := newProgressSender(server.Client(), server.URL, "", "token")
+	p := newProgressSender(server.Client(), server.URL, "runner-1", "", "token")
 	p.publish(context.Background(), true, true)
 	p.publish(context.Background(), true, true)
 
@@ -711,7 +720,7 @@ func TestProgressSenderCanceledContextStillSendsFinalSnapshot(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	p := newProgressSender(server.Client(), server.URL, "", "token")
+	p := newProgressSender(server.Client(), server.URL, "runner-1", "", "token")
 	p.publish(ctx, true, false)
 
 	if calls != 1 {
@@ -727,7 +736,7 @@ func TestProgressSenderSkipsWhenTokenIsEmpty(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := newProgressSender(server.Client(), server.URL, "", "")
+	p := newProgressSender(server.Client(), server.URL, "runner-1", "", "")
 	p.publish(context.Background(), true, false)
 
 	if calls != 0 {

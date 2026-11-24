@@ -1,4 +1,7 @@
 {
-    "TemporalHost": "${UNITMAN_MONO_HOST:-localhost}:7233",
-    "ApiHost": "http://${UNITMAN_MONO_HOST:-localhost}:8082"
+    "TemporalHost": "localhost:7233",
+    "ApiHost": "http://localhost:8082",
+    "runnerId": "",
+    "runnerSecret": "",
+    "registryHost": "localhost:5000"
 }

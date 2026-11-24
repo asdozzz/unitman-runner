@@ -6,9 +6,12 @@ import (
 	"os"
 )
 
+// ParseConfig читает config.json и проверяет обязательные для рантайма
+// значения. Старые config.json без новых полей десериализуются без ошибок,
+// но для запуска воркера требуются RunnerID и RunnerSecret.
 func ParseConfig() (Configuration, error) {
 	configuration := Configuration{}
-	file, err := os.Open("config.json")
+	file, err := os.Open(ConfigPath)
 	if err != nil {
 		return configuration, err
 	}
@@ -26,6 +29,10 @@ func ParseConfig() (Configuration, error) {
 
 	if len(configuration.ApiHost) == 0 {
 		return configuration, errors.New("ApiHost not defind in config.json")
+	}
+
+	if err := configuration.Validate(); err != nil {
+		return configuration, err
 	}
 
 	return configuration, nil

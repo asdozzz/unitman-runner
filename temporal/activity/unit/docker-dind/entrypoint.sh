@@ -1,6 +1,29 @@
 #!/bin/sh
 set -e
 
+# Реестр образов выдаётся backend-ом при регистрации раннера.
+# Канонический формат UNITMAN_REGISTRY_HOST — абсолютный URL
+# scheme://host[:port] без завершающего слэша. Допускается host[:port],
+# тогда используется схема http. Fallback на старые имена запрещён.
+registry_host="${UNITMAN_REGISTRY_HOST:-}"
+registry_host="${registry_host%/}"
+case "$registry_host" in
+  "")
+    echo "UNITMAN_REGISTRY_HOST не задан: укажите адрес реестра, полученный при регистрации" >&2
+    exit 1
+    ;;
+  *://*)
+    ;;
+  *)
+    registry_host="http://${registry_host}"
+    ;;
+esac
+registry_authority="${registry_host#*://}"
+if [ -z "$registry_authority" ]; then
+  echo "UNITMAN_REGISTRY_HOST содержит пустой хост: ${UNITMAN_REGISTRY_HOST}" >&2
+  exit 1
+fi
+
 # Удаляем флаг готовности на случай рестарта контейнера
 rm -f /tmp/.app_ready
 
@@ -8,8 +31,8 @@ rm -f /tmp/.app_ready
 rm -f /var/run/docker.pid /var/run/docker.sock
 dockerd \
   --host=unix:///var/run/docker.sock \
-  --registry-mirror=http://unitman-registry:5000 \
-  --insecure-registry=unitman-registry:5000 \
+  --registry-mirror="${registry_host}" \
+  --insecure-registry="${registry_authority}" \
   --storage-driver=overlay2 \
   --max-concurrent-downloads=10 \
   --max-concurrent-uploads=10 \

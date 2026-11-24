@@ -14,6 +14,11 @@ services:
       retries: 50
       start_period: 0.1s
     working_dir: /app
+    environment:
+      # Реестр выдаётся при регистрации раннера. Значение приходит из .env
+      # (compose использует его для интерполяции) и попадает в контейнер.
+      # Default/fallback запрещён: без переменной compose-конфигурация невалидна.
+      - UNITMAN_REGISTRY_HOST=${UNITMAN_REGISTRY_HOST:?UNITMAN_REGISTRY_HOST is required}
     volumes:
       - unit_app:/app
       - unit_docker_data:/var/lib/docker

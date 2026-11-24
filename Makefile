@@ -19,7 +19,7 @@ dind-build:
 dind-push:
 	docker push $(DIND_IMAGE)
 
-# Собрать и отправить в registry dind-образ с OpenCode.
+# Собрать и отправить в Docker Hub dind-образ с OpenCode.
 dind: dind-build dind-push
 
 # Совместимый алиас для существующих скриптов и IDE-конфигураций.
@@ -27,6 +27,3 @@ dind-unit: dind
 
 podman-unit:
 	docker build -f Dockerfile.dist -t asdozzz/unitman-unit:latest . && docker push asdozzz/unitman-unit:latest
-
-clear-registry:
-	sudo rm -rf ./register_data

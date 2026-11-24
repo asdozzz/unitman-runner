@@ -12,6 +12,7 @@ import (
 	"text/template"
 	"time"
 
+	"runner/config"
 	"runner/temporal/activity/unit"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
@@ -55,6 +56,10 @@ const (
 
 	workspaceCodeWorkspaceName = "workspace.code-workspace"
 )
+
+// parseConfig — точка подмены для тестов. По умолчанию читает config.json,
+// из которого берётся адрес реестра, выданный при регистрации раннера.
+var parseConfig = config.ParseConfig
 
 // Project — проект workspace из контракта ZapustitWorkspaceActivity.
 type Project struct {
@@ -326,9 +331,24 @@ func renderDockerfile(path string) (string, error) {
 }
 
 // writeWorkspaceEnv атомарно пишет .env workspace.
+//
+// Реестр образов выдаётся backend-ом при регистрации и хранится в config.json.
+// Нормализация к каноническому виду scheme://host[:port] переиспользуется из
+// пакета unit, чтобы workspace и unit трактовали адрес одинаково. Fallback на
+// прежние имена реестра запрещён.
 func writeWorkspaceEnv(workspaceDir string, command ZapustitWorkspaceCommand) error {
 	if strings.ContainsAny(command.WorkspaceName, "\r\n") {
 		return errors.New("имя workspace содержит перевод строки")
+	}
+
+	configuration, err := parseConfig()
+	if err != nil {
+		return fmt.Errorf("не удалось прочитать config.json: %w", err)
+	}
+
+	registryHost, _, err := unit.ResolveRegistry(configuration.RegistryHost)
+	if err != nil {
+		return err
 	}
 
 	memory := command.MemoryLimit
@@ -349,6 +369,7 @@ func writeWorkspaceEnv(workspaceDir string, command ZapustitWorkspaceCommand) er
 		{"UNITMAN_BRANCH_NAME", command.Branch},
 		{"UNITMAN_READ_ONLY", readOnly},
 		{"UNITMAN_MEMORY_LIMIT", strconv.Itoa(memory) + "m"},
+		{"UNITMAN_REGISTRY_HOST", registryHost},
 		{"COMPOSE_PROJECT_NAME", "workspace_" + command.WorkspaceId},
 		{"UNITMAN_WORKSPACE_APP_VOLUME", volumes.App},
 		{"UNITMAN_WORKSPACE_DOCKER_VOLUME", volumes.Docker},

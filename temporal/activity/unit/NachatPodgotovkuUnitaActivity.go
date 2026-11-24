@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"runner/config"
 	"runner/state"
 	"runner/temporal/activity/unit/model"
 	"runner/temporal/utils"
@@ -139,6 +141,23 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 	}
 
 	volumes := UnitVolumes(command.Id)
+
+	// Реестр образов выдаётся backend-ом при регистрации и хранится в
+	// config.json. Fallback на прежние имена реестра запрещён.
+	configuration, err := config.ParseConfig()
+	result.Steps = model.AddStepToSteps(result.Steps, "read config.json", "", err, time.Now().Unix())
+	if err != nil {
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
+	}
+
+	registryHost, cacheRepo, err := ResolveRegistry(configuration.RegistryHost)
+	result.Steps = model.AddStepToSteps(result.Steps, "resolve registry host", "", err, time.Now().Unix())
+	if err != nil {
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
+	}
+
 	envEntries := [][2]string{
 		{"UNITMAN_UNIT_ID", command.Id},
 		{"UNITMAN_UNIT_NAME", command.Name},
@@ -150,7 +169,8 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		{"UNITMAN_UNIT_DOCKER_VOLUME", volumes.Docker},
 		{"UNITMAN_UNIT_CONTAINERS_VOLUME", volumes.Containers},
 		{"UNITMAN_MEMORY_LIMIT", command.ContainerSettings.MemoryLimit},
-		{"UNITMAN_CACHE_REPO", "host.units:5000"},
+		{"UNITMAN_REGISTRY_HOST", registryHost},
+		{"UNITMAN_CACHE_REPO", cacheRepo},
 	}
 
 	for _, variableItem := range command.Variables {
@@ -285,4 +305,25 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 	result.Config = unitConfig
 
 	return wrapResultatPogotovkiSuccess(result), nil
+}
+
+// ResolveRegistry нормализует registryHost из config.json к каноническому виду
+// scheme://host[:port] без завершающего слэша и возвращает authority host[:port]
+// для docker-ссылок (UNITMAN_CACHE_REPO). Экспортирован, чтобы path workspace
+// использовал ту же нормализацию и не дублировал логику.
+func ResolveRegistry(value string) (string, string, error) {
+	registryHost := strings.TrimRight(strings.TrimSpace(value), "/")
+	if registryHost == "" {
+		return "", "", fmt.Errorf("registryHost не задан в config.json: выполните runner init")
+	}
+	if !strings.Contains(registryHost, "://") {
+		registryHost = "http://" + registryHost
+	}
+
+	parsed, err := url.Parse(registryHost)
+	if err != nil || parsed.Host == "" {
+		return "", "", fmt.Errorf("некорректный registryHost %q", value)
+	}
+
+	return parsed.Scheme + "://" + parsed.Host, parsed.Host, nil
 }

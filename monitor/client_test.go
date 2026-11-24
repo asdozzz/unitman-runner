@@ -25,6 +25,7 @@ func TestSendHealthRequestPayloadAndSignature(t *testing.T) {
 		method    string
 		path      string
 		mediaType string
+		runnerID  string
 		signature string
 		payload   HealthPayload
 		err       error
@@ -38,6 +39,7 @@ func TestSendHealthRequestPayloadAndSignature(t *testing.T) {
 			method:    r.Method,
 			path:      r.URL.Path,
 			mediaType: r.Header.Get("Content-Type"),
+			runnerID:  r.Header.Get("X-Runner-Id"),
 			signature: r.Header.Get("X-Runner-Signature"),
 			err:       err,
 		}
@@ -88,6 +90,9 @@ func TestSendHealthRequestPayloadAndSignature(t *testing.T) {
 	if result.signature == "" {
 		t.Errorf("missing X-Runner-Signature header")
 	}
+	if result.runnerID != "runner-1" {
+		t.Errorf("X-Runner-Id = %q, want runner-1", result.runnerID)
+	}
 	if result.payload != payload {
 		t.Errorf("payload: got %+v want %+v", result.payload, payload)
 	}
@@ -97,6 +102,7 @@ func TestSendNotificationsRequestPayloadAndSignature(t *testing.T) {
 	type captured struct {
 		path      string
 		mediaType string
+		runnerID  string
 		signature string
 		payload   NotificationsPayload
 	}
@@ -113,6 +119,7 @@ func TestSendNotificationsRequestPayloadAndSignature(t *testing.T) {
 		results <- captured{
 			path:      r.URL.Path,
 			mediaType: r.Header.Get("Content-Type"),
+			runnerID:  r.Header.Get("X-Runner-Id"),
 			signature: r.Header.Get("X-Runner-Signature"),
 			payload:   payload,
 		}
@@ -156,6 +163,9 @@ func TestSendNotificationsRequestPayloadAndSignature(t *testing.T) {
 	if result.signature == "" {
 		t.Errorf("missing X-Runner-Signature header")
 	}
+	if result.runnerID != "runner-1" {
+		t.Errorf("X-Runner-Id = %q, want runner-1", result.runnerID)
+	}
 	if len(result.payload.Notifications) != 1 {
 		t.Fatalf("notifications: got %d want 1", len(result.payload.Notifications))
 	}
@@ -167,23 +177,36 @@ func TestSendNotificationsRequestPayloadAndSignature(t *testing.T) {
 	}
 }
 
-func TestSendHealthWithoutSecretOmitsSignature(t *testing.T) {
-	signatures := make(chan string, 1)
+func TestSendHealthAlwaysSendsRunnerIdentityHeaders(t *testing.T) {
+	type captured struct {
+		runnerID  string
+		signature string
+		body      []byte
+	}
+	results := make(chan captured, 1)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		signatures <- r.Header.Get("X-Runner-Signature")
-		_, _ = io.Copy(io.Discard, r.Body)
+		body, _ := io.ReadAll(r.Body)
+		results <- captured{
+			runnerID:  r.Header.Get("X-Runner-Id"),
+			signature: r.Header.Get("X-Runner-Signature"),
+			body:      body,
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
-	client := &Client{BaseURL: server.URL, HTTPClient: server.Client()}
+	client := &Client{BaseURL: server.URL, RunnerID: "runner-1", Secret: testSecret, HTTPClient: server.Client()}
 	if err := client.SendHealth(context.Background(), HealthPayload{RunnerID: "runner-1"}); err != nil {
 		t.Fatalf("SendHealth: %v", err)
 	}
 
-	if signature := <-signatures; signature != "" {
-		t.Fatalf("expected no signature header, got %q", signature)
+	result := <-results
+	if result.runnerID != "runner-1" {
+		t.Fatalf("X-Runner-Id = %q", result.runnerID)
+	}
+	if want := signBody(testSecret, result.body); result.signature != want {
+		t.Fatalf("signature = %q, want %q", result.signature, want)
 	}
 }
 

@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"runner/config"
 	unitActivity "runner/temporal/activity/unit"
 
 	"go.temporal.io/sdk/activity"
@@ -205,6 +206,7 @@ func errorResultWithMessage(key, message string) HodResult {
 // Activities — набор активностей OpenCode, регистрируемых на worker'е.
 type Activities struct {
 	BackendURL string
+	RunnerID   string
 	Secret     string
 	Client     *http.Client
 	OpenCode   OpenCodeExecutor
@@ -221,7 +223,7 @@ func (a *Activities) VipolnitHodOpenCodeActivity(ctx context.Context, cmd HodCom
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
-	p := newProgressSender(client, a.BackendURL, a.Secret, workflowID(ctx))
+	p := newProgressSender(client, a.BackendURL, a.RunnerID, a.Secret, workflowID(ctx))
 
 	// Именованные возвраты нужны, чтобы паника не утекла в Temporal.
 	defer func() {
@@ -651,6 +653,7 @@ type saveStepsRequest struct {
 type progressSender struct {
 	client       *http.Client
 	url          string
+	runnerID     string
 	secret       string
 	token        string
 	mu           sync.Mutex
@@ -659,16 +662,17 @@ type progressSender struct {
 	finishedSent bool
 }
 
-func newProgressSender(c *http.Client, base, secret, token string) *progressSender {
+func newProgressSender(c *http.Client, base, runnerID, secret, token string) *progressSender {
 	if c == nil {
 		c = &http.Client{Timeout: 10 * time.Second}
 	}
 
 	return &progressSender{
-		client: c,
-		url:    saveStepsURL(base),
-		secret: secret,
-		token:  token,
+		client:   c,
+		url:      saveStepsURL(base),
+		runnerID: runnerID,
+		secret:   secret,
+		token:    token,
 	}
 }
 
@@ -804,9 +808,8 @@ func (p *progressSender) send(ctx context.Context, body []byte, content string) 
 		return false
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if p.secret != "" {
-		req.Header.Set("X-Runner-Signature", podpis(p.token, content, p.secret))
-	}
+	req.Header.Set(config.RunnerIDHeader, p.runnerID)
+	req.Header.Set(config.RunnerSignatureHeader, podpis(p.token, content, p.secret))
 
 	resp, err := p.client.Do(req)
 	if err != nil {

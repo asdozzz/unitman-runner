@@ -57,12 +57,3 @@ services:
       TZ: "Europe/Moscow"
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
-  unitman-registry:
-    image: distribution/distribution:latest
-    restart: always
-    ports:
-      - 5000:5000
-    volumes:
-      - ./register_data:/var/lib/registry
-      - ./.docker/registry/simple.yml:/etc/distribution/config.yml:ro

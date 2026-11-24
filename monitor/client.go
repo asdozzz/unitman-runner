@@ -5,9 +5,6 @@ package monitor
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"runner/config"
 	"runner/threat"
 )
 
@@ -27,21 +25,37 @@ const (
 
 // Client отправляет данные раннера на backend unitman.
 type Client struct {
-	BaseURL    string
-	Secret     string
-	RunnerID   string
-	TaskQueue  string
-	HTTPClient *http.Client
+	BaseURL      string
+	Secret       string
+	RunnerID     string
+	TaskQueue    string
+	RegistryHost string
+	HTTPClient   *http.Client
+}
+
+// NewClient собирает Client из рантайм-конфигурации раннера. Идентичность
+// (runnerId) и per-runner секрет берутся только из config.json; task queue
+// всегда равна runnerId.
+func NewClient(configuration config.Configuration, baseURL string) *Client {
+	return &Client{
+		BaseURL:      baseURL,
+		Secret:       configuration.RunnerSecret,
+		RunnerID:     configuration.RunnerID,
+		TaskQueue:    configuration.RunnerID,
+		RegistryHost: configuration.RegistryHost,
+		HTTPClient:   &http.Client{Timeout: defaultHTTPTimeout},
+	}
 }
 
 // HealthPayload — тело health-push запроса.
 type HealthPayload struct {
-	RunnerID    string `json:"runnerId"`
-	TaskQueue   string `json:"taskQueue"`
-	Active      bool   `json:"active"`
-	DockerStats string `json:"dockerStats"`
-	MemInfo     string `json:"memInfo"`
-	Unixtime    int64  `json:"unixtime"`
+	RunnerID     string `json:"runnerId"`
+	TaskQueue    string `json:"taskQueue"`
+	RegistryHost string `json:"registryHost,omitempty"`
+	Active       bool   `json:"active"`
+	DockerStats  string `json:"dockerStats"`
+	MemInfo      string `json:"memInfo"`
+	Unixtime     int64  `json:"unixtime"`
 	// Resources — структурированный снимок ресурсов сервера (CPU, память,
 	// диски, Docker) с уровнем угрозы. Старые backend'ы поле игнорируют.
 	Resources *threat.Snapshot `json:"resources,omitempty"`
@@ -75,7 +89,8 @@ func (c *Client) SendNotifications(ctx context.Context, payload NotificationsPay
 	return c.post(ctx, notificationsPath, payload)
 }
 
-// post сериализует payload, подписывает его и выполняет POST-запрос.
+// post сериализует payload один раз, подписывает ровно эти байты и выполняет
+// POST-запрос с заголовками X-Runner-Id и X-Runner-Signature.
 func (c *Client) post(ctx context.Context, path string, payload any) error {
 	rawBody, err := json.Marshal(payload)
 	if err != nil {
@@ -90,13 +105,8 @@ func (c *Client) post(ctx context.Context, path string, payload any) error {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if c.Secret != "" {
-		mac := hmac.New(sha256.New, []byte(c.Secret))
-		if _, err := mac.Write(rawBody); err != nil {
-			return fmt.Errorf("monitor: sign payload for %s: %w", path, err)
-		}
-		req.Header.Set("X-Runner-Signature", hex.EncodeToString(mac.Sum(nil)))
-	}
+	req.Header.Set(config.RunnerIDHeader, c.RunnerID)
+	req.Header.Set(config.RunnerSignatureHeader, config.Sign(c.Secret, rawBody))
 
 	httpClient := c.HTTPClient
 	if httpClient == nil {

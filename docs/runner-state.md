@@ -15,6 +15,70 @@
 `RunnerHealthCheckActivity` и `OchistkaDockeraActivity`. Теперь они удалены, а
 мониторинг работает как фоновые горутины внутри процесса раннера (`monitor`).
 
+## Конфигурация раннера (multi-runner)
+
+Идентичность раннера хранится в `config.json` и создаётся командой
+`runner init` после успешной регистрации на backend:
+
+| Ключ `config.json` | Назначение |
+|---|---|
+| `TemporalHost` (`TemporalHost`) | `host:ports.temporal` из ответа регистрации. |
+| `ApiHost` (`ApiHost`) | `scheme://host:ports.api` backend API. |
+| `RunnerID` (`runnerId`) | UUID v4, выданный backend-ом. Обязателен для запуска. |
+| `RunnerSecret` (`runnerSecret`) | Per-runner секрет HMAC-SHA256 (64 hex-символа) для всех callback-подписей. |
+| `RegistryHost` (`registryHost`) | `scheme://<registryHost>:ports.registry` из ответа регистрации. |
+
+`runner init` спрашивает **только host backend-а** (пустой ответ — `localhost`;
+схема и завершающий слэш ввода отбрасываются). Затем выполняется публичный
+`POST http://<host>:8082/api/runner/register` с телом
+`{"hostname":"...","version":"..."}`. Регистрация **не подписывается**: никаких
+секретов и auth-заголовков не отправляется.
+
+Успешный ответ `201`:
+
+```json
+{
+  "runnerId": "uuid",
+  "taskQueue": "uuid",
+  "secret": "<64 hex>",
+  "registryHost": "registry.example.com",
+  "ports": {"api": 8082, "temporal": 7233, "registry": 5000}
+}
+```
+
+`runner init` проверяет, что `taskQueue` совпадает с `runnerId`, а `secret` —
+64 hex-символа. Порты из ответа задают `ApiHost`, `TemporalHost` и
+`RegistryHost`; при отсутствии отдельного порта используются значения по
+умолчанию `8082`/`7233`/`5000`. Если `registryHost` пуст, реестр собирается из
+host-а регистрации и registry-порта.
+
+`config.json` записывается атомарно (временный файл в той же директории +
+`rename`) с правами `0600`, потому что содержит `RunnerSecret`. Секрет никогда
+не читается из переменных окружения.
+
+Воркер слушает Temporal-очередь, равную `RunnerID`; отдельная `taskQueue` не
+хранится. Legacy-константа `unitman-runner-queue` в раннере не используется.
+
+### Callback-подписи
+
+Каждый callback раннера содержит `X-Runner-Id` и
+`X-Runner-Signature = hex(HMAC-SHA256(payload, RunnerSecret))` (нижний регистр).
+`X-Runner-Id` всегда равен `runnerId` из `config.json` и совпадает с телом
+(health/unitState) или путём (build-state).
+
+| Endpoint | Подписываемый payload |
+|---|---|
+| `POST /api/runner/health` | сырое тело запроса |
+| `POST /api/runner/unitStateNotifications` | сырое тело запроса |
+| `POST /api/runner/saveSteps` | конкатенация `responseId + stepsContent` (не JSON-тело) |
+| `GET .../build-state` | пустой payload |
+| `PUT .../build-state` | сырое тело запроса |
+
+Backend отвечает `404 runner.not_found` для неизвестного `runnerId` и
+`401 runner.invalid_signature` при неверной подписи. Публичный адрес раннера (`publicAddress`)
+задаётся администратором на backend-е и в `config.json` раннера
+не хранится.
+
 ## Файл БД и persist-требования
 
 По умолчанию состояние хранится в файле `runner-state.db` в рабочем каталоге
@@ -37,9 +101,7 @@
 | Переменная | Назначение | Значение по умолчанию |
 |---|---|---|
 | `RUNNER_STATE_DB` | Путь к файлу bbolt с состоянием юнитов | `runner-state.db` |
-| `RUNNER_ID` | Идентификатор раннера, отправляется в health-push и уведомлениях | `os.Hostname()` |
 | `RUNNER_WORK_DIR` | Рабочий каталог раннера, корень раскладки `projects/<ProjectId>/units/<UnitId>` | `os.Getwd()` |
-| `RUNNER_CALLBACK_SECRET` | Секрет для HMAC-подписи запросов на backend (заголовок `X-Runner-Signature`) | пусто (без подписи) |
 | `RUNNER_BACKEND_URL` | Базовый URL backend unitman | `ApiHost` из `config.json` |
 | `RUNNER_RESOURCES_INTERVAL_SECONDS` | Период сбора снимка ресурсов (CPU, память, диски, Docker) | `30` |
 | `RUNNER_THREAT_WARNING_PERCENT` | Жёлтый порог потребления памяти/диска | `70` |
@@ -54,7 +116,7 @@
 | Цикл | Интервал | Что делает |
 |---|---|---|
 | Resources | 30 секунд | Собирает снимок ресурсов хоста: CPU (`/proc/stat`, `/proc/loadavg`), память (`/proc/meminfo`), диски (`statfs` для `/`, рабочего каталога и `DockerRootDir`), занятое Docker место (`/system/df`), и публикует его в пакет `threat`. |
-| Health-push | 1 минута | Отправляет `docker stats` (для юнитов `MemPerc`/`MemUsage` пересчитаны от лимита памяти), `/proc/meminfo`, `resources` (снимок с уровнями), `runnerId`, `taskQueue`, `unixtime` на `/api/runner/health`. |
+| Health-push | 1 минута | Отправляет `docker stats` (для юнитов `MemPerc`/`MemUsage` пересчитаны от лимита памяти), `/proc/meminfo`, `resources` (снимок с уровнями), `runnerId`, `taskQueue`, `registryHost`, `unixtime` на `/api/runner/health`. |
 | Reconciler | 10 минут | Сверяет ожидаемое состояние из БД с фактическим (`docker ps`), отправляет уведомления о расхождениях и восстановлениях. |
 | Bootstrap | один раз при старте (внутри reconciler) | Обходит `projects/*/units/*`, читает `.env` и создаёт записи состояния для существующих юнитов. |
 | Cleanup | 2 часа | Выполняет `docker image prune -af` и `docker builder prune -af`. |

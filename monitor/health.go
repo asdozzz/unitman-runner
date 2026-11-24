@@ -59,8 +59,9 @@ func sendHealthOnce(ctx context.Context, client *Client, workdir string, api *do
 	}
 
 	payload := HealthPayload{
-		RunnerID:  client.RunnerID,
-		TaskQueue: client.TaskQueue,
+		RunnerID:     client.RunnerID,
+		TaskQueue:    client.TaskQueue,
+		RegistryHost: client.RegistryHost,
 		// Ошибка docker stats не отменяет отправку: раннер продолжает работать.
 		Active:      true,
 		DockerStats: collectUnitDockerStats(ctx, workdir, api),

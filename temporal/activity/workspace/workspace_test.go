@@ -5,7 +5,21 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"runner/config"
 )
+
+// withRegistryConfig подменяет чтение config.json на время теста и
+// восстанавливает исходную функцию после его завершения.
+func withRegistryConfig(t *testing.T, registryHost string) {
+	t.Helper()
+
+	previous := parseConfig
+	parseConfig = func() (config.Configuration, error) {
+		return config.Configuration{RunnerID: "runner-test", RegistryHost: registryHost}, nil
+	}
+	t.Cleanup(func() { parseConfig = previous })
+}
 
 func TestWorkspaceVolumesForNaming(t *testing.T) {
 	volumes := WorkspaceVolumesFor("ws-1")
@@ -31,6 +45,8 @@ func TestWorkspaceVolumesForNaming(t *testing.T) {
 
 func TestWriteWorkspaceEnvUsesContractNames(t *testing.T) {
 	dir := t.TempDir()
+	withRegistryConfig(t, "https://registry.example:5000/")
+
 	command := ZapustitWorkspaceCommand{
 		WorkspaceId:   "ws-1",
 		WorkspaceName: "payments refactor",
@@ -57,6 +73,8 @@ func TestWriteWorkspaceEnvUsesContractNames(t *testing.T) {
 		"UNITMAN_BRANCH_NAME=feature/payments",
 		"UNITMAN_READ_ONLY=true",
 		"UNITMAN_MEMORY_LIMIT=3072m",
+		// Канонический вид: без завершающего слэша, со схемой.
+		"UNITMAN_REGISTRY_HOST=https://registry.example:5000",
 		"COMPOSE_PROJECT_NAME=workspace_ws-1",
 		"UNITMAN_WORKSPACE_APP_VOLUME=workspace_ws-1_app",
 		"UNITMAN_WORKSPACE_DOCKER_VOLUME=workspace_ws-1_docker",
@@ -70,6 +88,8 @@ func TestWriteWorkspaceEnvUsesContractNames(t *testing.T) {
 
 func TestWriteWorkspaceEnvDefaultsMemory(t *testing.T) {
 	dir := t.TempDir()
+	withRegistryConfig(t, "registry.example:5000")
+
 	command := ZapustitWorkspaceCommand{WorkspaceId: "ws-1"}
 
 	if err := writeWorkspaceEnv(dir, command); err != nil {
@@ -79,6 +99,25 @@ func TestWriteWorkspaceEnvDefaultsMemory(t *testing.T) {
 	data, _ := os.ReadFile(filepath.Join(dir, ".env"))
 	if !strings.Contains(string(data), "UNITMAN_MEMORY_LIMIT=3072m") {
 		t.Fatalf("default memory limit is missing:\n%s", data)
+	}
+	if !strings.Contains(string(data), "UNITMAN_REGISTRY_HOST=http://registry.example:5000") {
+		t.Fatalf("normalized registry host is missing:\n%s", data)
+	}
+}
+
+func TestWriteWorkspaceEnvRequiresRegistryHost(t *testing.T) {
+	dir := t.TempDir()
+	withRegistryConfig(t, "")
+
+	err := writeWorkspaceEnv(dir, ZapustitWorkspaceCommand{WorkspaceId: "ws-1"})
+	if err == nil {
+		t.Fatal("expected error when RegistryHost is empty")
+	}
+	if !strings.Contains(err.Error(), "registryHost") {
+		t.Fatalf("error should mention registryHost: %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, ".env")); !os.IsNotExist(statErr) {
+		t.Fatalf(".env must not be written when config is invalid")
 	}
 }
 

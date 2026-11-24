@@ -21,10 +21,6 @@ import (
 	"go.temporal.io/sdk/worker"
 )
 
-// TaskQueue — очередь Temporal, которую обслуживает воркер раннера.
-// Используется и в воркере, и в health-push (payload TaskQueue).
-const TaskQueue = "unitman-runner-queue"
-
 func Init(config config.Configuration) {
 	// Create the client object just once per process
 	c, err := utils.MakeTemporalClient(config)
@@ -36,8 +32,12 @@ func Init(config config.Configuration) {
 
 	defer c.Close()
 
+	// Очередь Temporal всегда равна runnerId из config.json. Отдельная
+	// taskQueue не хранится, legacy-константы не используются.
+	taskQueue := config.RunnerID
+
 	// This worker hosts both Workflow and Activity functions
-	w := worker.New(c, TaskQueue, worker.Options{})
+	w := worker.New(c, taskQueue, worker.Options{})
 
 	backendURL := os.Getenv("RUNNER_BACKEND_URL")
 	if backendURL == "" {
@@ -55,7 +55,10 @@ func Init(config config.Configuration) {
 
 	opencodeActs := &opencodeActivity.Activities{
 		BackendURL: backendURL,
-		Secret:     os.Getenv("RUNNER_CALLBACK_SECRET"),
+		// Идентичность и per-runner секрет берутся из config.json. Секрет
+		// подписывает saveSteps (responseId+stepsContent) и другие callback-и.
+		RunnerID: config.RunnerID,
+		Secret:   config.RunnerSecret,
 		// Прогресс — короткие запросы; у OpenCode свой дедлайн хода, поэтому
 		// общий Timeout клиента ему не подходит.
 		Client:   &http.Client{Timeout: 10 * time.Second},
@@ -69,7 +72,6 @@ func Init(config config.Configuration) {
 		activity.RegisterOptions{Name: opencodeActivity.ActivityName},
 	)
 
-	w.RegisterActivity(projectActivity.InitProjectActivity)
 	w.RegisterActivity(projectActivity.RemoveProjectActivity)
 	w.RegisterActivity(unitActivity.NachatSborkuUnitaActivity)
 	w.RegisterActivity(unitActivity.NachatUdalenieUnitaActivity)
@@ -110,22 +112,9 @@ func Init(config config.Configuration) {
 	}
 	store := state.Default()
 
-	runnerID := os.Getenv("RUNNER_ID")
-	if runnerID == "" {
-		runnerID, err = os.Hostname()
-		if err != nil {
-			log.Printf("unable to resolve hostname for RUNNER_ID: %v", err)
-			runnerID = "unknown-runner"
-		}
-	}
-
-	monitorClient := &monitor.Client{
-		BaseURL:    backendURL,
-		Secret:     os.Getenv("RUNNER_CALLBACK_SECRET"),
-		RunnerID:   runnerID,
-		TaskQueue:  TaskQueue,
-		HTTPClient: &http.Client{Timeout: 10 * time.Second},
-	}
+	// Идентичность и HMAC-секрет callback-ов берутся только из config.json
+	// (RunnerID и RunnerSecret обязательны), без env-fallback.
+	monitorClient := monitor.NewClient(config, backendURL)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

@@ -45,7 +45,8 @@ func SaveStepsToMono(command SaveStepsCommand) {
 	steps := *command.Steps
 	lastStep := steps[len(steps)-1]
 
-	request := SaveStepsRequest{ResponseId: command.ResponseId, StepsContent: string(marshalled), Finished: !lastStep.Success || command.Finished}
+	stepsContent := string(marshalled)
+	request := SaveStepsRequest{ResponseId: command.ResponseId, StepsContent: stepsContent, Finished: !lastStep.Success || command.Finished}
 
 	requestMarshalled, err := json.Marshal(request)
 
@@ -60,6 +61,9 @@ func SaveStepsToMono(command SaveStepsCommand) {
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(config.RunnerIDHeader, configuration.RunnerID)
+	// saveSteps подписывает конкатенацию responseId и stepsContent, а не JSON.
+	req.Header.Set(config.RunnerSignatureHeader, config.Sign(configuration.RunnerSecret, []byte(command.ResponseId+stepsContent)))
 
 	client := http.Client{Timeout: 10 * time.Second}
 	res, err := client.Do(req)

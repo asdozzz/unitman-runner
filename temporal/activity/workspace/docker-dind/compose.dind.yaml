@@ -19,6 +19,9 @@ services:
     environment:
       - UNITMAN_BRANCH_NAME=${UNITMAN_BRANCH_NAME:-}
       - UNITMAN_READ_ONLY=${UNITMAN_READ_ONLY:-false}
+      # Реестр выдаётся при регистрации раннера и пишется в .env. Значение
+      # обязательно: default/fallback запрещён.
+      - UNITMAN_REGISTRY_HOST=${UNITMAN_REGISTRY_HOST:?UNITMAN_REGISTRY_HOST is required}
     volumes:
       - workspace_app:/workspace
       - workspace_docker:/var/lib/docker
