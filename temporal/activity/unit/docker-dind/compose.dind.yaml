@@ -2,8 +2,8 @@ services:
   unit:
     container_name: ${UNITMAN_UNIT_NAME}.${UNITMAN_PROJECT_NAME}
     runtime: sysbox-runc
-    build:
-      context: .
+    # Предсобранный образ: dind + OpenCode + entrypoint. Сборки на месте нет.
+    image: "${UNITMAN_UNIT_IMAGE_NAME:-asdozzz/dind-unit:latest}"
     mem_limit: ${UNITMAN_MEMORY_LIMIT:-3g}
     memswap_limit: ${UNITMAN_MEMORY_LIMIT:-3g}
     stop_grace_period: 30s
@@ -32,10 +32,12 @@ services:
 
   # Read-only IDE. Порт 47000 не публикуется на хост: сервис живёт
   # в network namespace контейнера unit и доступен через proxy по поддомену.
+  #
+  # Профиль ide означает, что подготовка юнита НЕ поднимает редактор.
+  # IDE стартует по требованию при открытии ссылки редактора.
   ide:
-    image: asdozzz/unitman-ide:latest
-    build:
-      context: ./ide
+    profiles: ["ide"]
+    image: "${UNITMAN_IDE_IMAGE:-asdozzz/unitman-ide:latest}"
     network_mode: "service:unit"
     depends_on:
       - unit

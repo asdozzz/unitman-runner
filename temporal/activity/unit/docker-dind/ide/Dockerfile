@@ -2,6 +2,10 @@
 # Базовый образ зафиксирован тегом, чтобы поведение не менялось неявно.
 FROM codercom/code-server:4.93.1
 
+# Cleanup раннера чистит неиспользуемые образы (`docker image prune -af`).
+# Метка защищает предсобранный IDE-образ от удаления между запусками.
+LABEL unitman.keep=true
+
 USER root
 
 # git нужен для git diff по read-only тому; wget используется для healthcheck.

@@ -5,11 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"text/template"
 	"time"
 
 	"runner/temporal/activity/unit/model"
-	"runner/temporal/utils"
 )
 
 const (
@@ -19,8 +17,9 @@ const (
 	unitPodmanImageName       = "asdozzz/unitman-unit:latest"
 )
 
-// PrepareUnitFiles копирует служебные файлы юнита, выбирает compose-файл
-// и генерирует Dockerfile из шаблона.
+// PrepareUnitFiles выбирает compose-файл по образу юнита и копирует его в
+// рабочий каталог как compose.yaml. Dockerfile больше не генерируется: образы
+// unit и ide предсобраны и подключаются через image:, а не build:.
 func PrepareUnitFiles(unitPath string, imageConfig model.ImageConfigStruct) ([]model.Step, error) {
 	steps := []model.Step{}
 
@@ -30,45 +29,15 @@ func PrepareUnitFiles(unitPath string, imageConfig model.ImageConfigStruct) ([]m
 		return steps, err
 	}
 
-	templatesPath := filepath.Join(currentPath, unitTemplatesRelativePath)
+	composeFile := SelectUnitComposeFile(imageConfig.Image)
+	source := filepath.Join(currentPath, unitTemplatesRelativePath, composeFile)
+	target := filepath.Join(unitPath, "compose.yaml")
 
 	unixtimeStart := time.Now().Unix()
-	args := []string{"cp", "-R", templatesPath + "/.", unitPath}
-	msg, err := utils.ExecCommand(unitPath, args)
-	steps = model.AddStepToSteps(steps, strings.Join(args, " "), msg, err, unixtimeStart)
-	if err != nil {
-		return steps, fmt.Errorf("не удалось скопировать служебные файлы юнита: %w", err)
-	}
-
-	composeFile := SelectUnitComposeFile(imageConfig.Image)
-
-	unixtimeStart = time.Now().Unix()
-	err = CopyFileContents(filepath.Join(unitPath, composeFile), filepath.Join(unitPath, "compose.yaml"))
+	err = CopyFileContents(source, target)
 	steps = model.AddStepToSteps(steps, "make compose.yaml from "+composeFile, "", err, unixtimeStart)
 	if err != nil {
 		return steps, fmt.Errorf("не удалось подготовить compose.yaml: %w", err)
-	}
-
-	unixtimeStart = time.Now().Unix()
-	readyTemplate, err := template.ParseFiles(filepath.Join(unitPath, "Dockerfile.temp"))
-	steps = model.AddStepToSteps(steps, "parse Dockerfile template", "", err, unixtimeStart)
-	if err != nil {
-		return steps, fmt.Errorf("не удалось разобрать Dockerfile.temp: %w", err)
-	}
-
-	unixtimeStart = time.Now().Unix()
-	outputFile, err := os.Create(filepath.Join(unitPath, "Dockerfile"))
-	steps = model.AddStepToSteps(steps, "make Dockerfile", "", err, unixtimeStart)
-	if err != nil {
-		return steps, fmt.Errorf("не удалось создать Dockerfile: %w", err)
-	}
-	defer outputFile.Close()
-
-	unixtimeStart = time.Now().Unix()
-	err = readyTemplate.Execute(outputFile, imageConfig)
-	steps = model.AddStepToSteps(steps, "generate text for Dockerfile", "", err, unixtimeStart)
-	if err != nil {
-		return steps, fmt.Errorf("не удалось сгенерировать Dockerfile: %w", err)
 	}
 
 	return steps, nil

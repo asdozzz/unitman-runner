@@ -195,7 +195,7 @@ func applyIdeEditorModeContent(content, mode string) string {
 			continue
 		}
 
-		if inIde && trimmed == "image: asdozzz/unitman-ide:latest" {
+		if inIde && strings.HasPrefix(trimmed, "image:") {
 			ideImageIndex = len(cleaned)
 		}
 
@@ -256,10 +256,11 @@ func findLinePrefix(lines []string, prefix string) (int, string) {
 	return -1, "      "
 }
 
-// IdeRecreateCommand пересоздаёт только IDE-сайдкар, не трогая контейнер
-// юнита и его тома. Так смена режима не требует полной переподготовки.
+// IdeRecreateCommand запускает или пересоздаёт только IDE-сайдкар, не трогая
+// контейнер юнита и его тома. Профиль ide включает сервис, который не входит
+// в обычный `docker compose up` подготовки.
 func IdeRecreateCommand() []string {
-	return []string{"docker", "compose", "up", "-d", "--no-deps", "--force-recreate", ideComposeService}
+	return []string{"docker", "compose", "--profile", "ide", "up", "-d", "--no-deps", ideComposeService}
 }
 
 // UnitServiceRunning сообщает, запущен ли контейнер unit в compose-проекте.
@@ -276,6 +277,21 @@ func unitServiceRunning(unitPath string, exec func(string, []string) (string, er
 	}
 
 	out, err := exec(unitPath, []string{"docker", "compose", "ps", "-q", unitComposeService})
+	if err != nil {
+		return false, err
+	}
+
+	return strings.TrimSpace(out) != "", nil
+}
+
+// IdeServiceRunning сообщает, запущен ли IDE-сайдкар. Профиль ide выключен по
+// умолчанию, поэтому для проверки явно включаем его.
+func IdeServiceRunning(unitPath string) (bool, error) {
+	if strings.TrimSpace(unitPath) == "" {
+		return false, fmt.Errorf("не задан каталог юнита")
+	}
+
+	out, err := utils.ExecCommand(unitPath, []string{"docker", "compose", "--profile", "ide", "ps", "-q", ideComposeService})
 	if err != nil {
 		return false, err
 	}
@@ -633,6 +649,21 @@ func IzmenitRezhimRedaktoraUnitaActivity(
 	if !running {
 		result.Steps = model.AddStepToSteps(result.Steps, "recreate ide", "unit is not running; mode will apply on next start", nil, time.Now().Unix())
 		return result, nil
+	}
+
+	// Выключение редактирования не должно поднимать ещё не запущенный редактор:
+	// режим сохраняется в compose.yaml и применится при открытии ссылки.
+	if mode == RezhimRedaktoraView {
+		ideRunning, ideErr := IdeServiceRunning(unitPath)
+		result.Steps = model.AddStepToSteps(result.Steps, "check ide is running", "", ideErr, time.Now().Unix())
+		if ideErr != nil {
+			result.Success = 0
+			return result, nil
+		}
+		if !ideRunning {
+			result.Steps = model.AddStepToSteps(result.Steps, "recreate ide", "ide is not running; mode will apply on next open", nil, time.Now().Unix())
+			return result, nil
+		}
 	}
 
 	unixtimeStart = time.Now().Unix()

@@ -139,7 +139,7 @@ func TestFindUnitDirectoryReportsMissingUnit(t *testing.T) {
 
 func TestIdeRecreateCommand(t *testing.T) {
 	got := IdeRecreateCommand()
-	want := []string{"docker", "compose", "up", "-d", "--no-deps", "--force-recreate", "ide"}
+	want := []string{"docker", "compose", "--profile", "ide", "up", "-d", "--no-deps", "ide"}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Fatalf("unexpected recreate command: %#v", got)
 	}

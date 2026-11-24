@@ -114,6 +114,12 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		return wrapResultatPogotovki(result), nil
 	}
 
+	// Для разработки базовый образ можно переопределить через окружение,
+	// не меняя unitman.yaml проекта. Значение влияет и на выбор compose.
+	if override := strings.TrimSpace(os.Getenv("UNITMAN_UNIT_IMAGE_NAME")); override != "" {
+		command.ImageConfig.Image = override
+	}
+
 	fileSteps, err := PrepareUnitFiles(unitPath, command.ImageConfig)
 	result.Steps = append(result.Steps, fileSteps...)
 	if err != nil {
@@ -158,12 +164,20 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		return wrapResultatPogotovki(result), nil
 	}
 
+	// IDE собирается заранее; для разработки можно переопределить образ
+	// через UNITMAN_IDE_IMAGE, не меняя compose-шаблон.
+	ideImage := strings.TrimSpace(os.Getenv("UNITMAN_IDE_IMAGE"))
+	if ideImage == "" {
+		ideImage = "asdozzz/unitman-ide:latest"
+	}
+
 	envEntries := [][2]string{
 		{"UNITMAN_UNIT_ID", command.Id},
 		{"UNITMAN_UNIT_NAME", command.Name},
 		{"UNITMAN_PROJECT_NAME", command.ProjectName},
 		{"UNITMAN_BRANCH_NAME", command.Branch},
 		{"UNITMAN_UNIT_IMAGE_NAME", command.ImageConfig.Image},
+		{"UNITMAN_IDE_IMAGE", ideImage},
 		{"COMPOSE_PROJECT_NAME", command.Name + "_" + command.ProjectName},
 		{"UNITMAN_UNIT_APP_VOLUME", volumes.App},
 		{"UNITMAN_UNIT_DOCKER_VOLUME", volumes.Docker},
@@ -192,7 +206,9 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		return wrapResultatPogotovki(result), nil
 	}
 
-	args := []string{"docker", "compose", "up", "-d", "--build"}
+	// IDE вынесена в compose-профиль и стартует по требованию при открытии
+	// редактора, поэтому подготовка поднимает только контейнер unit.
+	args := []string{"docker", "compose", "up", "-d"}
 	unixtimeStart = time.Now().Unix()
 	msg, err := utils.ExecCommand(unitPath, args)
 	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
@@ -204,17 +220,6 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 	unixtimeStart = time.Now().Unix()
 	err = WaitUnitReady(unitPath)
 	result.Steps = model.AddStepToSteps(result.Steps, "wait unit ready", "", err, unixtimeStart)
-	if err != nil {
-		result.Success = 0
-		return wrapResultatPogotovki(result), nil
-	}
-
-	// IDE запускается вместе с unit в docker compose up. Проверяем её
-	// health-эндпоинт из network namespace юнита: снаружи порт 47000
-	// не публикуется. Ошибка готовности делает подготовку неуспешной.
-	unixtimeStart = time.Now().Unix()
-	err = WaitIdeReady(unitPath)
-	result.Steps = model.AddStepToSteps(result.Steps, ideReadyStepCommand, "", err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil
@@ -251,20 +256,6 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		unixtimeStart = time.Now().Unix()
 		msg, err = SyncUnitVolumes(unitPath)
 		result.Steps = model.AddStepToSteps(result.Steps, "unit-volumes-sync", msg, err, unixtimeStart)
-		if err != nil {
-			result.Success = 0
-			return wrapResultatPogotovki(result), nil
-		}
-	}
-
-	// IDE стартует вместе с unit до SyncUnitRepo, поэтому её /tmp/git-index
-	// мог быть скопирован до появления .git/index. Обновляем индекс после
-	// синхронизации репозитория и томов, иначе git diff в редакторе не работает.
-	// В режиме edit IDE работает с настоящим .git/index, копия не нужна.
-	if rezhim == RezhimRedaktoraView {
-		unixtimeStart = time.Now().Unix()
-		err = RefreshIdeGitIndex(unitPath)
-		result.Steps = model.AddStepToSteps(result.Steps, ideGitIndexStepCommand, "", err, unixtimeStart)
 		if err != nil {
 			result.Success = 0
 			return wrapResultatPogotovki(result), nil
