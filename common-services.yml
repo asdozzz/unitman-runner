@@ -7,6 +7,12 @@ services:
       - ./.docker/proxy/index.html:/usr/share/nginx/html/index.html
     ports:
       - '8087:80'
+    # Исторический алиас: backend проверяет доступность прокси по имени
+    # uproxy:80 внутри сети unitman_default (см. ProveritPublicAddressUseCase).
+    networks:
+      default:
+        aliases:
+          - uproxy
   node-exporter:
     image: prom/node-exporter
     volumes:
