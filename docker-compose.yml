@@ -4,21 +4,6 @@ services:
       file: common-services.yml
       service: unitman-proxy
 
-  node-exporter:
-    extends:
-      file: common-services.yml
-      service: node-exporter
-
-  prometheus:
-    extends:
-      file: common-services.yml
-      service: prometheus
-
-  grafana:
-    extends:
-      file: common-services.yml
-      service: grafana
-
 networks:
   default:
     external: true
