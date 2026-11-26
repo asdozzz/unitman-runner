@@ -1,7 +1,6 @@
 package workspace
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -210,35 +209,5 @@ func TestRedactURLHidesCredentials(t *testing.T) {
 	}
 }
 
-func TestWorkspaceActivityInputJSONHasNoCredentials(t *testing.T) {
-	command := ZapustitWorkspaceCommand{
-		WorkspaceId: "ws-1",
-		Branch:      "main",
-		Projects: []Project{
-			{
-				ProjectId:   "project-1",
-				ProjectName: "api",
-				ProjectCode: "services/api",
-				StorageUrl:  "https://gitlab.example/services/api.git",
-				RepoId:      "repo-1",
-				MainBranch:  "main",
-			},
-		},
-	}
-
-	raw, err := json.Marshal(command)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	for _, pattern := range []string{"oauth2:", "token@", "TESTTOKENEXAMPLEVALUE", "Bearer", "ghp_", "github_pat_", "user:pass@"} {
-		if strings.Contains(string(raw), pattern) {
-			t.Fatalf("workspace input contains credential pattern %q: %s", pattern, raw)
-		}
-	}
-	if !strings.Contains(string(raw), `"RepoId":"repo-1"`) {
-		t.Fatalf("RepoId missing from workspace input: %s", raw)
-	}
-	if !strings.Contains(string(raw), `"StorageUrl":"https://gitlab.example/services/api.git"`) {
-		t.Fatalf("StorageUrl must be clean: %s", raw)
-	}
-}
+// Guard входных payload'ов активностей объединён в единый table-driven тест
+// TestActivityInputsJSONHasNoCredentials (temporal/utils/payload_guard_test.go).
