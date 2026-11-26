@@ -1,0 +1,64 @@
+name: security
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fail closed if config is missing
+        run: test -f .gitleaks.toml
+
+      - name: Install gitleaks (pinned)
+        env:
+          GITLEAKS_VERSION: "8.18.4"
+        run: |
+          set -eu
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o /tmp/gitleaks.tgz
+          tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Detect secrets (redacted)
+        run: gitleaks detect --source . --no-git --config .gitleaks.toml --redact --verbose
+
+  fallback-scan:
+    name: fallback secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fail closed if scanner is missing
+        run: test -x scripts/check-secrets.sh
+
+      - name: Run dependency-free scanner
+        run: scripts/check-secrets.sh
+
+  redaction-tests:
+    name: log redaction tests (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # WS-4 uses log/slog, which requires Go >= 1.21.
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Run redaction tests
+        run: go test ./temporal/utils/...

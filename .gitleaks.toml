@@ -1,0 +1,126 @@
+# Gitleaks configuration (WS-10).
+# Extends the upstream default ruleset and adds explicit high-signal rules.
+# Allowlisting is deliberately narrow: only exact synthetic fixtures used by
+# WS-4/WS-8 tests and non-source artifacts. Test directories are NOT excluded,
+# and .env.dist / .env.example are scanned (they hold empty placeholders only).
+
+[extend]
+useDefault = true
+
+# --- Explicit high-signal rules ------------------------------------------------
+
+[[rules]]
+id = "github-fine-grained-pat"
+description = "GitHub fine-grained personal access token"
+regex = '''github_pat_[A-Za-z0-9_]{20,}'''
+keywords = ["github_pat_"]
+
+[[rules]]
+id = "github-classic-pat"
+description = "GitHub classic personal access token (ghp_/gho_/ghu_/ghs_/ghr_)"
+regex = '''(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}'''
+keywords = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"]
+
+[[rules]]
+id = "gitlab-pat"
+description = "GitLab personal access token"
+regex = '''glpat-[A-Za-z0-9_-]{20,}'''
+keywords = ["glpat-"]
+
+[[rules]]
+id = "generic-private-key"
+description = "PEM private key block"
+regex = '''-----BEGIN [A-Z ]*PRIVATE KEY-----'''
+keywords = ["BEGIN", "PRIVATE KEY"]
+
+[[rules]]
+id = "oauth2-url-credential"
+description = "OAuth2 credential embedded in a clone URL"
+regex = '''oauth2:[^@/\s]{8,}@'''
+keywords = ["oauth2:"]
+
+[[rules]]
+id = "url-token-credential"
+description = "token@ userinfo embedded in a URL"
+regex = '''://[^/\s]*token@'''
+keywords = ["token@"]
+
+[[rules]]
+id = "bearer-token"
+description = "Bearer token in source"
+regex = '''Bearer [A-Za-z0-9._-]{20,}'''
+keywords = ["Bearer "]
+
+[[rules]]
+id = "slack-token"
+description = "Slack token"
+regex = '''xox[baprs]-[A-Za-z0-9-]{10,}'''
+keywords = ["xoxb-", "xoxp-", "xoxa-", "xoxr-", "xoxs-"]
+
+[[rules]]
+id = "aws-access-key-id"
+description = "AWS access key id"
+regex = '''(?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}'''
+keywords = ["AKIA", "ASIA", "ABIA", "ACCA"]
+
+# --- Allowlist ----------------------------------------------------------------
+# Global allowlist: exact synthetic fixtures + lock/artifact paths only.
+[allowlist]
+description = "WS-10 synthetic test fixtures and non-source artifacts"
+
+# Paths are regexes matched against repo-relative paths.
+paths = [
+  '''(^|/)runner\.log$''',
+  '''(^|/)\.git/config$''',
+  '''(^|/)\.idea/''',
+  '''(^|/)node_modules/''',
+  '''(^|/)vendor/''',
+  '''(^|/)yarn\.lock$''',
+  '''(^|/)go\.sum$''',
+  '''(^|/)composer\.lock$''',
+  # scanner's own rule definitions + synthetic self-test fixtures
+  '''(^|/)scripts/check-secrets\.sh$''',
+  # local-only / generated artifacts (never committed, absent in CI checkout)
+  '''(^|/)graphify-out/''',
+  '''(^|/)register_data/''',
+  '''(^|/)projects/''',
+  '''(^|/)var/''',
+  '''(^|/)config/jwt/private\.pem$''',
+  '''(^|/)config\.json$''',
+  '''(^|/)\.env$''',
+  '''(^|/)\.env\.local$''',
+  '''(^|/)\.env\..*\.local$''',
+]
+
+# Exact synthetic literals only. These values exist in shared test fixtures
+# (WS-4 redaction tests, WS-8 synthetic .env fixtures) and are never real.
+regexes = [
+  # TESTTOKENEXAMPLEVALUE, TESTNESTEDMAPTOKEN, TESTAPIKEYEXAMPLE, ...
+  '''TEST[A-Z0-9_]{3,}''',
+  # test-app-secret-not-for-production, test-runner-master-key-not-for-production, ...
+  '''not-for-production''',
+  # base64 fixtures from WS-8
+  '''dGVzdC1vbmx5LW9wZW5jb2RlLWtleS0zMmJ5dGVzISE=''',
+  '''dGVzdC1vbmx5LXBlcnNvbmFsLXRva2VuLWtleS0zMmI=''',
+  # generic placeholders used in tests and docs (never real)
+  '''test-secret''',
+  '''change-me''',
+  '''admin_secret''',
+  # GitLab PAT fixtures in existing PHP tests (clearly synthetic)
+  '''glpat-(?:secret|secret-1|secret-1234|no-rights|abcdef123456|project-secret)\b''',
+  # placeholder / concatenation fragments in tests and adapter source
+  '''oauth2:(?:token|TOKEN|secret-token|glpat-secret|<token>)@''',
+  '''oauth2:\[\^''',
+  '''://token@''',
+  '''://redacted@''',
+  '''oauth2:'\.\$repo->getCredentials\(\)->token\.''',
+  '''<redacted>''',
+  # malformed JWT fixture ("broken token value") in OpenCode API test
+  '''Bearer slomannyj\.token\.znachenie''',
+  # AWS documentation example access key id
+  '''AKIAIOSFODNN7EXAMPLE''',
+  # repeated-hex test secret in runner tests
+  '''0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef''',
+  # synthetic sk- fixture in OpenSslShifrTest
+  '''sk-live-abcdef123456''',
+]

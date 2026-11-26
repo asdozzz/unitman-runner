@@ -1,0 +1,19 @@
+# WS-10 pre-commit hooks: gitleaks + dependency-free fallback scan.
+# Install once with: pre-commit install
+# Run manually with: pre-commit run --all-files
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+        name: gitleaks (staged, redacted)
+        args: ["protect", "--staged", "--redact", "--config", ".gitleaks.toml"]
+
+  - repo: local
+    hooks:
+      - id: check-secrets-fallback
+        name: fallback secret scan (scripts/check-secrets.sh)
+        entry: scripts/check-secrets.sh
+        language: script
+        pass_filenames: false
+        always_run: true
