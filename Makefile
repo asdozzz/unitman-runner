@@ -1,6 +1,6 @@
 start:
 	docker compose up -d
-	go build main.go
+	go build -o main .
 	./main start
 
 stop:
