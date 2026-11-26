@@ -102,6 +102,14 @@ regexes = [
   # base64 fixtures from WS-8
   '''dGVzdC1vbmx5LW9wZW5jb2RlLWtleS0zMmJ5dGVzISE=''',
   '''dGVzdC1vbmx5LXBlcnNvbmFsLXRva2VuLWtleS0zMmI=''',
+  # invalid AES key fixture: base64("test-only-key-16") - deliberately wrong
+  # length, used to exercise the invalid-key path. Never a real key.
+  '''dGVzdC1vbmx5LWtleS0xNg==''',
+  # EXAMPLE-marked synthetic PAT fixtures. The literal uppercase EXAMPLE marker
+  # makes these impossible to confuse with a real token (which is random-charset).
+  '''ghp_EXAMPLE[A-Za-z0-9]*''',
+  '''github_pat_EXAMPLE[A-Za-z0-9_]*''',
+  '''glpat-EXAMPLE[A-Za-z0-9_-]*''',
   # generic placeholders used in tests and docs (never real)
   '''test-secret''',
   '''change-me''',
