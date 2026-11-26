@@ -32,12 +32,23 @@ func main() {
 		os.Exit(2)
 	}
 
+	// version не требует рабочего каталога и прав на UNITMAN_HOME.
+	if os.Args[1] == "version" || os.Args[1] == "--version" {
+		fmt.Println(config.BuildVersion)
+		return
+	}
+
 	if err := enterHome(); err != nil {
 		fmt.Fprintln(os.Stderr, "home:", err)
 		os.Exit(1)
 	}
 
 	switch os.Args[1] {
+	case "update":
+		if err := runUpdate(os.Stdout, os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "update:", err)
+			os.Exit(1)
+		}
 	case "init":
 		if err := runInit(os.Stdin, os.Stdout, os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, "init:", err)
@@ -114,11 +125,16 @@ func runInit(in io.Reader, out io.Writer, args []string) error {
 	// hostname не обязателен: при ошибке просто не отправляем его.
 	hostname, _ := os.Hostname()
 
+	version := config.BuildVersion
+	if version == "" {
+		version = config.DefaultVersion
+	}
+
 	configuration, err := config.RunInit(context.Background(), config.InitOptions{
 		Host:       host,
 		ConfigPath: config.ConfigPath,
 		Hostname:   hostname,
-		Version:    config.DefaultVersion,
+		Version:    version,
 	})
 	if err != nil {
 		return err
@@ -445,6 +461,11 @@ func usage() {
   unitman-runner logs          показать последние 200 строк лога
   unitman-runner exec <ProjectId> <UnitId> <команда>
                                выполнить команду внутри контейнера юнита
+  unitman-runner version       показать версию сборки
+  unitman-runner update --version vX.Y.Z
+                               скачать и установить новую версию бинаря
+  unitman-runner update --rollback
+                               вернуть предыдущий бинарь
 
 init спрашивает только host backend-а и регистрируется на публичном
 эндпоинте /api/runner/register. Порты сервисов и per-runner секрет приходят в

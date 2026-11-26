@@ -18,6 +18,10 @@ var (
 	UnitImageRepository = "unitman/unit"
 	IdeImageRepository  = "unitman/ide"
 	UnitImageTag        = ""
+
+	// UpdateRepository — OCI-образ релиза, из которого `runner update` берёт
+	// новый бинарь. Подставляется линкером при релизной сборке.
+	UpdateRepository = "ghcr.io/owner/unitman-release"
 )
 
 // UnitImageRef возвращает ссылку на образ юнита для реестра установки.
