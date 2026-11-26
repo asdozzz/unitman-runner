@@ -81,17 +81,13 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		return wrapResultatPogotovki(result), nil
 	}
 
-	logCommand := command
-	logCommand.StorageUrl = RedactStorageURL(command.StorageUrl)
-
-	out, err := json.Marshal(logCommand)
-	if err != nil {
-		fmt.Println(err)
+	if _, marshalErr := json.Marshal(command); marshalErr != nil {
+		fmt.Println(marshalErr)
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil
 	}
 
-	fmt.Println("ResultatPodgotovkiUnita:" + string(out))
+	utils.LogActivityCommand("ResultatPodgotovkiUnita", command)
 
 	filepathUnit := "./projects/" + command.ProjectId + "/units/" + command.Id
 

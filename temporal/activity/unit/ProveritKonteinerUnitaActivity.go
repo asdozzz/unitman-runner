@@ -3,8 +3,8 @@ package unit
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"runner/state"
+	"runner/temporal/utils"
 	"strings"
 	"time"
 )
@@ -38,8 +38,7 @@ func ProveritKonteinerUnitaActivity(ctx context.Context, command ProveritKontein
 		}
 	}()
 
-	out, err := json.Marshal(command)
-	if err != nil {
+	if _, marshalErr := json.Marshal(command); marshalErr != nil {
 		result.Success = 0
 		return result, nil
 	}
@@ -47,7 +46,7 @@ func ProveritKonteinerUnitaActivity(ctx context.Context, command ProveritKontein
 	// Имена юнита и проекта для compose-интерполяции берутся из .env рабочего
 	// каталога: мутация окружения процесса протекала между активностями
 	// и разворачивала контейнеры с чужими именами.
-	fmt.Println("ProveritKonteinerUnita:" + string(out))
+	utils.LogActivityCommand("ProveritKonteinerUnita", command)
 
 	filepath := "./projects/" + command.ProjectId + "/units/" + command.Id
 

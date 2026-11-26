@@ -52,14 +52,14 @@ func NachatObnovlenieUnitaActivity(ctx context.Context, command NachatObnovlenie
 	}
 
 	unixtimeStart := time.Now().Unix()
-	out, err := json.Marshal(command)
+	_, err = json.Marshal(command)
 	result.Steps = model.AddStepToSteps(result.Steps, "json.Marshal", "success", err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil
 	}
 
-	fmt.Println("NachatObnovlenieUnita:" + string(out))
+	utils.LogActivityCommand("NachatObnovlenieUnita", command)
 
 	filepathUnit := "./projects/" + command.ProjectId + "/units/" + command.Id
 

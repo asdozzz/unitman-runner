@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"runner/temporal/activity/project/model"
+	"runner/temporal/utils"
 	"time"
 )
 
@@ -24,7 +25,7 @@ func RemoveProjectActivity(ctx context.Context, command RemoveProjectCommand) (*
 		Steps:   []model.Step{},
 	}
 	unixtimeStart := time.Now().Unix()
-	out, err := json.Marshal(command)
+	_, err := json.Marshal(command)
 	if err != nil {
 		result.Success = false
 		result.Steps = append(result.Steps, model.Step{Command: "json.Marshal", Response: err.Error(), Success: false, Unixtime: time.Now().Unix(), UnixtimeStart: unixtimeStart})
@@ -33,7 +34,7 @@ func RemoveProjectActivity(ctx context.Context, command RemoveProjectCommand) (*
 		result.Steps = append(result.Steps, model.Step{Command: "json.Marshal", Response: "success", Success: true, Unixtime: time.Now().Unix(), UnixtimeStart: unixtimeStart})
 	}
 
-	fmt.Println("RemoveProjectCommand:" + string(out))
+	utils.LogActivityCommand("RemoveProjectCommand", command)
 	filepathDir := "./projects/" + command.ProjectId
 
 	unixtimeStart = time.Now().Unix()

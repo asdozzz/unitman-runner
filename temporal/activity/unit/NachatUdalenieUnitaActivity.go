@@ -3,7 +3,6 @@ package unit
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"runner/state"
@@ -43,18 +42,15 @@ func NachatUdalenieUnitaActivity(ctx context.Context, command NachatUdalenieUnit
 		}
 	}()
 
-	logCommand := command
-	logCommand.StorageUrl = RedactStorageURL(command.StorageUrl)
-
 	unixtimeStart := time.Now().Unix()
-	out, err := json.Marshal(logCommand)
+	_, err = json.Marshal(command)
 	result.Steps = model.AddStepToSteps(result.Steps, "json.Marshal", "success", err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
 		return result, nil
 	}
 
-	fmt.Println("NachatUdalenieUnita:" + string(out))
+	utils.LogActivityCommand("NachatUdalenieUnita", command)
 
 	filepathUnit := "./projects/" + command.ProjectId + "/units/" + command.Id
 
