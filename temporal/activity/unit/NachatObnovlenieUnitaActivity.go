@@ -19,9 +19,10 @@ type NachatObnovlenieUnita struct {
 	ProjectName string
 	Id          string
 	Name        string
-	// StorageUrl содержит токен админа и используется только на время fetch;
-	// после синхронизации токен удаляется из origin.
+	// StorageUrl — чистый remote URL без токена. Токен запрашивается
+	// через broker по RepoId и живёт только на время fetch.
 	StorageUrl string
+	RepoId     string
 }
 
 type ResultatObnovleniyaUnita struct {
@@ -114,7 +115,15 @@ func NachatObnovlenieUnitaActivity(ctx context.Context, command NachatObnovlenie
 	}
 
 	unixtimeStart = time.Now().Unix()
-	msg, err = SyncUnitRepo(unitPath, branch, command.StorageUrl)
+	grant, grantErr := fetchRepoGrant(ctx, command.RepoId, command.ProjectId, command.Id)
+	result.Steps = model.AddStepToSteps(result.Steps, "fetch repo credentials", "", grantErr, unixtimeStart)
+	if grantErr != nil {
+		result.Success = 0
+		return result, nil
+	}
+
+	unixtimeStart = time.Now().Unix()
+	msg, err = SyncUnitRepo(ctx, unitPath, branch, command.StorageUrl, grant)
 	result.Steps = model.AddStepToSteps(result.Steps, "unit-repo-sync branch="+branchLabel, msg, err, unixtimeStart)
 	if err != nil {
 		result.Success = 0

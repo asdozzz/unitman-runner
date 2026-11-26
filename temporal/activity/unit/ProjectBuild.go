@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"runner/temporal/credentials"
 	"runner/temporal/utils"
 )
 
@@ -24,10 +25,14 @@ import (
 // ensureProjectMainBranch создаёт seed-репозиторий, если его ещё нет. Если он
 // уже есть (например, после предыдущей сборки), повторный clone не выполняется —
 // это делает retry идемпотентным.
-func ensureProjectMainBranch(ctx context.Context, projectDir, storageURL string) (string, string, error) {
-	storageURL = strings.TrimSpace(storageURL)
-	if storageURL == "" {
-		return "", "", errors.New("не задан StorageUrl проекта: невозможно собрать проект на раннере")
+func ensureProjectMainBranch(
+	ctx context.Context,
+	projectDir, storageURL string,
+	grant credentials.Grant,
+) (string, string, error) {
+	cleanURL, err := CleanRepoURL(storageURL)
+	if err != nil {
+		return "", "", fmt.Errorf("некорректный StorageUrl проекта: %w", err)
 	}
 
 	if err := os.MkdirAll(projectDir, os.ModePerm); err != nil {
@@ -46,10 +51,15 @@ func ensureProjectMainBranch(ctx context.Context, projectDir, storageURL string)
 			return "", "", fmt.Errorf("очистить каталог проекта %s: %w", projectDir, err)
 		}
 
-		args := []string{"git", "clone", "--progress", storageURL, "."}
-		if _, err := utils.ExecCommandContext(ctx, projectDir, args); err != nil {
-			// Ошибка уже редактирует credentials в URL; StorageUrl в текст не
-			// добавляем, чтобы токен не попал в шаг прогресса.
+		env, cleanup, err := HostGitCredentials(projectDir, grant)
+		if err != nil {
+			return "", "", fmt.Errorf("подготовить git-креденшелы проекта: %w", err)
+		}
+		defer cleanup()
+
+		args := []string{"git", "clone", "--progress", cleanURL, "."}
+		if _, err := utils.ExecCommandContextWithEnv(ctx, projectDir, args, env); err != nil {
+			// URL чистый; токен живёт только в askpass-файле.
 			return "", "", fmt.Errorf("git clone проекта в %s: %w", projectDir, err)
 		}
 	}
@@ -101,8 +111,8 @@ func clearDirectory(dir string) error {
 }
 
 // sanitizeProjectOrigin удаляет логин/токен из origin seed-репозитория проекта.
-// StorageUrl приходит от backend с admin-токеном и используется только на время
-// clone/fetch; после синхронизации токен не должен оставаться в .git/config.
+// StorageUrl приходит от backend чистым; токен подставляется только через
+// askpass на время clone/fetch и не должен оставаться в .git/config.
 func sanitizeProjectOrigin(projectDir string, execCommand func(string, []string) (string, error)) error {
 	out, err := execCommand(projectDir, []string{"git", "remote", "get-url", "origin"})
 	if err != nil {

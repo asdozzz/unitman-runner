@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"runner/config"
+	"runner/temporal/credentials"
 )
 
 const buildStateTestBuiltAt = int64(1764000000)
@@ -164,6 +165,25 @@ func newSborkaTestDeps(t *testing.T, baseURL, secret string, spy *activityTestSp
 
 			return "", nil
 		},
+		execCommandEnv: func(dir string, args []string, env []string) (string, error) {
+			spy.execCalls = append(spy.execCalls, strings.Join(args, " "))
+			for _, entry := range env {
+				if strings.Contains(entry, "TESTTOKENEXAMPLEVALUE") {
+					t.Fatalf("token leaked into command environment: %q", entry)
+				}
+			}
+			return "", nil
+		},
+		fetchGrant: func(_ context.Context, repoID, projectID, unitID string) (credentials.Grant, error) {
+			return credentials.Grant{
+				RepoID:    repoID,
+				ProjectID: projectID,
+				RepoURL:   "https://git.example.com/org/repo.git",
+				Username:  "oauth2",
+				Token:     "TESTTOKENEXAMPLEVALUE",
+				ExpiresAt: time.Now().Add(5 * time.Minute).Unix(),
+			}, nil
+		},
 		now: func() time.Time { return time.Unix(buildStateTestBuiltAt, 0).UTC() },
 		httpClient: func() *http.Client {
 			if httpClient != nil {
@@ -171,7 +191,7 @@ func newSborkaTestDeps(t *testing.T, baseURL, secret string, spy *activityTestSp
 			}
 			return &http.Client{Timeout: time.Second}
 		},
-		ensureProjectRepo: func(_ context.Context, projectDir, storageURL string) (string, string, error) {
+		ensureProjectRepo: func(_ context.Context, projectDir, storageURL string, _ credentials.Grant) (string, string, error) {
 			spy.cloneCalls++
 			spy.cloneProjectDir = projectDir
 			spy.cloneStorageURL = storageURL
@@ -190,7 +210,8 @@ func testSborkaCommand(runnerID string) NachatSborkuUnita {
 		Id:         "unit-1",
 		Name:       "unit",
 		Branch:     "feature/x",
-		StorageUrl: "https://token@git.example.com/org/repo.git",
+		StorageUrl: "https://git.example.com/org/repo.git",
+		RepoId:     "repo-1",
 		RunnerId:   runnerID,
 	}
 }
@@ -249,11 +270,23 @@ func TestNachatSborkuUnitaBuildsProjectLazily(t *testing.T) {
 		t.Fatalf("unit branch fetch was not executed: %#v", spy.execCalls)
 	}
 
-	// Токен из StorageUrl не должен попадать в шаги активности.
+	// Токен не должен попадать ни в шаги, ни в JSON-вход активности.
 	for _, step := range result.Steps {
-		if strings.Contains(step.Command, "token") || strings.Contains(step.Response, "token") {
+		if strings.Contains(step.Command, "TESTTOKENEXAMPLEVALUE") || strings.Contains(step.Response, "TESTTOKENEXAMPLEVALUE") {
 			t.Fatalf("token leaked into step: %#v", step)
 		}
+	}
+	rawCommand, marshalErr := json.Marshal(testSborkaCommand(""))
+	if marshalErr != nil {
+		t.Fatalf("marshal command: %v", marshalErr)
+	}
+	for _, pattern := range []string{"oauth2:", "token@", "TESTTOKENEXAMPLEVALUE", "Bearer", "ghp_", "github_pat_"} {
+		if strings.Contains(string(rawCommand), pattern) {
+			t.Fatalf("activity input contains credential pattern %q: %s", pattern, rawCommand)
+		}
+	}
+	if strings.Contains(string(rawCommand), `"StorageUrl":"https://git.example.com/org/repo.git"`) == false {
+		t.Fatalf("StorageUrl must be clean: %s", rawCommand)
 	}
 }
 

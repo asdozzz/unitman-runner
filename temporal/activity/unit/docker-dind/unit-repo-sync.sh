@@ -5,6 +5,14 @@ APP_DIR=${UNITMAN_APP_DIR:-/app}
 SEED_DIR=${UNITMAN_SEED_DIR:-/seed/git}
 URL=${UNITMAN_REPO_URL:-}
 BRANCH=${UNITMAN_REPO_BRANCH:-}
+GIT_ASKPASS=${UNITMAN_GIT_ASKPASS:-}
+
+# Креденшелы передаются только через askpass-файл (0600), не через URL/env/argv.
+if [ -n "$GIT_ASKPASS" ]; then
+    export GIT_ASKPASS
+    export GIT_ASKPASS_REQUIRE=force
+fi
+export GIT_TERMINAL_PROMPT=0
 
 git config --global --add safe.directory "$APP_DIR" 2>/dev/null || true
 git config --global user.name >/dev/null 2>&1 || git config --global user.name "unitman"
@@ -89,7 +97,8 @@ fi
 
 git branch --set-upstream-to="origin/$BRANCH" "$BRANCH" >/dev/null 2>&1 || true
 
-# Токен админа не остаётся в origin после клонирования/обновления.
+# После git-операции в origin не должно оставаться userinfo, а credential
+# helpers и askpass-файл удаляются.
 if git remote get-url origin >/dev/null 2>&1; then
     ORIGIN_URL=$(git remote get-url origin)
     CLEAN_URL=$(printf '%s' "$ORIGIN_URL" | sed -E 's#^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/@]*@#\1#')
@@ -97,6 +106,8 @@ if git remote get-url origin >/dev/null 2>&1; then
         git remote set-url origin "$CLEAN_URL"
     fi
 fi
+git config --local --unset-all credential.helper >/dev/null 2>&1 || true
+rm -f "${UNITMAN_GIT_ASKPASS:-}" /tmp/unitman-git-credentials
 
 # Без активной редакторской сессии push запрещён. Активную сессию не трогаем:
 # её настраивает отдельная активность и она сама управляет deny-хуком.

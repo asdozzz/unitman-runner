@@ -15,6 +15,7 @@ import (
 	"runner/config"
 	"runner/temporal/activity/unit"
 	"runner/temporal/activity/unit/model"
+	"runner/temporal/credentials"
 	"runner/temporal/utils"
 
 	"go.temporal.io/sdk/activity"
@@ -61,13 +62,19 @@ const (
 // из которого берётся адрес реестра, выданный при регистрации раннера.
 var parseConfig = config.ParseConfig
 
+// fetchWorkspaceRepoGrant — точка подмены для тестов активностей.
+var fetchWorkspaceRepoGrant = credentials.FetchFromConfig
+
 // Project — проект workspace из контракта ZapustitWorkspaceActivity.
 type Project struct {
 	ProjectId   string
 	ProjectName string
 	ProjectCode string
-	StorageUrl  string
-	CanPush     bool
+	// StorageUrl — чистый remote URL без токена.
+	StorageUrl string
+	// RepoId нужен для just-in-time запроса гранта.
+	RepoId  string
+	CanPush bool
 	// MainBranch — основная ветка проекта (снимок из Unitman). Нужна скрипту
 	// repo-sync, чтобы создать ветку workspace локально, если её нет в origin.
 	MainBranch string
@@ -496,8 +503,28 @@ func syncProject(
 	workspaceDir string,
 	command ZapustitWorkspaceCommand,
 	project Project,
+	grant credentials.Grant,
 ) (string, error) {
+	cleanURL, err := unit.CleanRepoURL(project.StorageUrl)
+	if err != nil {
+		return "", err
+	}
+	project.StorageUrl = cleanURL
+
 	env := buildRepoEnv(command, project)
+
+	credEnv, cleanup, err := unit.InstallGitCredentialsForUnit(
+		ctx,
+		workspaceDir,
+		workspaceComposeService,
+		grant,
+	)
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
+
+	env = append(env, credEnv...)
 
 	return execWorkspace(ctx, workspaceDir, "/usr/local/bin/workspace-repo-sync", workspaceContainerDir, env)
 }

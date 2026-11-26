@@ -21,6 +21,7 @@ const (
 	errorKeyBranchNotFound = "opencode.workspace.project_branch_not_found"
 	errorKeyCloneFailed    = "opencode.workspace.project_clone_failed"
 	errorKeyOperation      = "opencode.workspace.operation_failed"
+	errorKeyCredentials    = "opencode.workspace.credentials_unavailable"
 )
 
 // ZapustitWorkspaceActivity создаёт/обновляет workspace: раскладку, тома,
@@ -143,7 +144,22 @@ func ZapustitWorkspaceActivity(
 	allProjectsOK := true
 	for _, project := range command.Projects {
 		started = time.Now()
-		output, syncErr := syncProject(ctx, workspaceDir, command, project)
+		grant, grantErr := fetchWorkspaceRepoGrant(ctx, project.RepoId, project.ProjectId, "")
+		if grantErr != nil {
+			tracker.add("fetch repo credentials "+project.ProjectName, "", grantErr, started)
+			key := errorKeyCredentials
+			result.Projects = append(result.Projects, ProjectResult{
+				ProjectId: project.ProjectId,
+				Name:      project.ProjectName,
+				Success:   false,
+				ErrorKey:  &key,
+			})
+			allProjectsOK = false
+			continue
+		}
+
+		started = time.Now()
+		output, syncErr := syncProject(ctx, workspaceDir, command, project, grant)
 		tracker.add("sync project "+project.ProjectName, redactURL(output), syncErr, started)
 
 		projectResult := ProjectResult{

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runner/config"
 	"runner/temporal/activity/unit/model"
+	"runner/temporal/credentials"
 	"runner/temporal/utils"
 	"runner/threat"
 	"strings"
@@ -20,11 +21,13 @@ import (
 const runnerBackendURLEnv = "RUNNER_BACKEND_URL"
 
 type NachatSborkuUnita struct {
-	ProjectId  string
-	Id         string
-	Name       string
-	Branch     string
+	ProjectId string
+	Id        string
+	Name      string
+	Branch    string
+	// StorageUrl — чистый URL без токена; RepoId нужен для broker-гранта.
 	StorageUrl string
+	RepoId     string
 	// RunnerId/TaskQueue добавляет backend в multi-runner режиме. Старый
 	// backend их не присылает — тогда runnerId берётся из config.json.
 	RunnerId  string
@@ -46,23 +49,29 @@ type sborkaDependencies struct {
 	getwd               func() (string, error)
 	mkdirAll            func(string, os.FileMode) error
 	execCommand         func(string, []string) (string, error)
+	execCommandEnv      func(string, []string, []string) (string, error)
 	now                 func() time.Time
 	httpClient          func() *http.Client
-	ensureProjectRepo   func(ctx context.Context, projectDir, storageURL string) (string, string, error)
+	fetchGrant          func(ctx context.Context, repoID, projectID, unitID string) (credentials.Grant, error)
+	ensureProjectRepo   func(ctx context.Context, projectDir, storageURL string, grant credentials.Grant) (string, string, error)
 	newBuildStateClient func(baseURL, runnerID, secret string, httpClient *http.Client) *ProjectBuildStateClient
 }
 
 // defaultSborkaDependencies — боевые реализации.
 func defaultSborkaDependencies() sborkaDependencies {
 	return sborkaDependencies{
-		blocked:           threat.BlockedMessage,
-		parseConfig:       config.ParseConfig,
-		getenv:            os.Getenv,
-		getwd:             os.Getwd,
-		mkdirAll:          os.MkdirAll,
-		execCommand:       utils.ExecCommand,
+		blocked:     threat.BlockedMessage,
+		parseConfig: config.ParseConfig,
+		getenv:      os.Getenv,
+		getwd:       os.Getwd,
+		mkdirAll:    os.MkdirAll,
+		execCommand: utils.ExecCommand,
+		execCommandEnv: func(dir string, args []string, env []string) (string, error) {
+			return utils.ExecCommandContextWithEnv(context.Background(), dir, args, env)
+		},
 		now:               time.Now,
 		httpClient:        func() *http.Client { return &http.Client{Timeout: ProjectBuildStateDefaultTimeout} },
+		fetchGrant:        credentials.FetchFromConfig,
 		ensureProjectRepo: ensureProjectMainBranch,
 		newBuildStateClient: func(baseURL, runnerID, secret string, httpClient *http.Client) *ProjectBuildStateClient {
 			return NewProjectBuildStateClient(baseURL, runnerID, secret, httpClient)
@@ -180,6 +189,16 @@ func nachatSborkuUnitaActivity(ctx context.Context, command NachatSborkuUnita, d
 		return result, err
 	}
 
+	// Грант запрашивается один раз на активность: и для clone seed-репозитория,
+	// и для fetch ветки юнита. В payload/state токен не попадает.
+	unixtimeStart = deps.now().Unix()
+	grant, err := deps.fetchGrant(ctx, command.RepoId, command.ProjectId, command.Id)
+	result.Steps = model.AddStepToSteps(result.Steps, "fetch repo credentials", "", err, unixtimeStart)
+	if err != nil {
+		result.Success = 0
+		return result, fmt.Errorf("получить git-креденшелы проекта %q: %w", command.ProjectId, err)
+	}
+
 	buildStateClient := deps.newBuildStateClient(baseURL, runnerID, secret, deps.httpClient())
 
 	unixtimeStart = deps.now().Unix()
@@ -194,7 +213,7 @@ func nachatSborkuUnitaActivity(ctx context.Context, command NachatSborkuUnita, d
 		// Проекта ещё нет на этом раннере — клонируем основную ветку проекта в
 		// seed-репозиторий и только после успешного clone фиксируем факт сборки.
 		unixtimeStart = deps.now().Unix()
-		commit, mainBranch, err := deps.ensureProjectRepo(ctx, projectPath, command.StorageUrl)
+		commit, mainBranch, err := deps.ensureProjectRepo(ctx, projectPath, command.StorageUrl, grant)
 		response := ""
 		if err == nil {
 			response = "commit=" + commit
@@ -228,26 +247,37 @@ func nachatSborkuUnitaActivity(ctx context.Context, command NachatSborkuUnita, d
 		result.Steps = model.AddStepToSteps(result.Steps, "project build state", "already built: skip clone", nil, deps.now().Unix())
 	}
 
-	// StorageUrl содержит admin-токен. origin переключаем на него только на
-	// время fetch, чтобы не ломать приватные репозитории; после fetch токен
-	// удаляется из .git/config.
-	if strings.TrimSpace(command.StorageUrl) != "" {
-		unixtimeStart = deps.now().Unix()
-		args := []string{"git", "remote", "set-url", "origin", command.StorageUrl}
-		msg, err := deps.execCommand(projectPath, args)
-		stepCommand := "git remote set-url origin " + RedactStorageURL(command.StorageUrl)
-		result.Steps = model.AddStepToSteps(result.Steps, stepCommand, msg, err, unixtimeStart)
-		if err != nil {
-			result.Success = 0
-			return result, nil
-		}
+	// origin всегда чистый; токен подставляется только через askpass env на
+	// время fetch и не попадает в .git/config.
+	cleanStorageURL, err := CleanRepoURL(command.StorageUrl)
+	if err != nil {
+		result.Steps = model.AddStepToSteps(result.Steps, "validate storage url", "", err, deps.now().Unix())
+		result.Success = 0
+		return result, err
+	}
+
+	unixtimeStart = deps.now().Unix()
+	args := []string{"git", "remote", "set-url", "origin", cleanStorageURL}
+	msg, err := deps.execCommand(projectPath, args)
+	result.Steps = model.AddStepToSteps(result.Steps, "git remote set-url origin "+cleanStorageURL, msg, err, unixtimeStart)
+	if err != nil {
+		result.Success = 0
+		return result, nil
 	}
 
 	branchRef := "refs/remotes/origin/" + command.Branch
 
+	env, cleanup, err := HostGitCredentials(os.TempDir(), grant)
+	if err != nil {
+		result.Steps = model.AddStepToSteps(result.Steps, "prepare git credentials", "", err, deps.now().Unix())
+		result.Success = 0
+		return result, err
+	}
+	defer cleanup()
+
 	unixtimeStart = deps.now().Unix()
-	args := []string{"git", "fetch", "--prune", "origin", "+refs/heads/" + command.Branch + ":" + branchRef}
-	msg, err := deps.execCommand(projectPath, args)
+	args = []string{"git", "fetch", "--prune", "origin", "+refs/heads/" + command.Branch + ":" + branchRef}
+	msg, err = deps.execCommandEnv(projectPath, args, env)
 	result.Steps = model.AddStepToSteps(result.Steps, strings.Join(args, " "), msg, err, unixtimeStart)
 	if err != nil {
 		result.Success = 0

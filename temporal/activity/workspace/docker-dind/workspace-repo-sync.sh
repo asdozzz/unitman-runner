@@ -8,6 +8,14 @@ URL=${UNITMAN_REPO_URL:-}
 BRANCH=${UNITMAN_REPO_BRANCH:-}
 BASE_BRANCH=${UNITMAN_REPO_BASE_BRANCH:-}
 READ_ONLY=${UNITMAN_READ_ONLY:-false}
+GIT_ASKPASS=${UNITMAN_GIT_ASKPASS:-}
+
+# Креденшелы передаются только через askpass-файл (0600), не через URL/env/argv.
+if [ -n "$GIT_ASKPASS" ]; then
+    export GIT_ASKPASS
+    export GIT_ASKPASS_REQUIRE=force
+fi
+export GIT_TERMINAL_PROMPT=0
 
 fail() {
     # Ключ ошибки читает Go-активность и отдаёт в ProjectResult.ErrorKey.
@@ -128,15 +136,18 @@ else
     fi
 fi
 
-# Read-only: токен не должен остаться в origin, а push запрещаем хуком.
+# После синхронизации remote всегда без userinfo, credential helpers и
+# askpass-файл удаляются. Read-only дополнительно запрещает push хуком.
+cd "$DIR"
+
+CLEAN_URL=$(printf '%s' "$URL" | sed -E 's#^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/@]*@#\1#')
+if git remote get-url origin >/dev/null 2>&1; then
+    git remote set-url origin "$CLEAN_URL"
+fi
+git config --local --unset-all credential.helper >/dev/null 2>&1 || true
+rm -f "${UNITMAN_GIT_ASKPASS:-}" /tmp/unitman-git-credentials
+
 if [ "$READ_ONLY" = "true" ]; then
-    cd "$DIR"
-
-    CLEAN_URL=$(printf '%s' "$URL" | sed -E 's#^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/@]*@#\1#')
-    if [ "$CLEAN_URL" != "$URL" ]; then
-        git remote set-url origin "$CLEAN_URL"
-    fi
-
     HOOK="$DIR/.git/hooks/pre-push"
     cat > "$HOOK" <<'UNITMAN_PRE_PUSH_EOF'
 #!/bin/sh

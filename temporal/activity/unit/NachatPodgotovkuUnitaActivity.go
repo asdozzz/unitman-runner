@@ -23,11 +23,14 @@ type ContainerSettings struct {
 }
 
 type NachatPodgotovkuUnita struct {
-	ProjectId         string
-	ProjectName       string
-	Id                string
-	Name              string
+	ProjectId   string
+	ProjectName string
+	Id          string
+	Name        string
+	// StorageUrl — чистый remote URL без токена. RepoId нужен для
+	// just-in-time запроса гранта.
 	StorageUrl        string
+	RepoId            string
 	Commands          []string
 	Variables         []model.UnitConfigVariable
 	ContainerSettings ContainerSettings
@@ -211,7 +214,15 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 	}
 
 	unixtimeStart = time.Now().Unix()
-	msg, err = SyncUnitRepo(unitPath, command.Branch, command.StorageUrl)
+	grant, grantErr := fetchRepoGrant(ctx, command.RepoId, command.ProjectId, command.Id)
+	result.Steps = model.AddStepToSteps(result.Steps, "fetch repo credentials", "", grantErr, unixtimeStart)
+	if grantErr != nil {
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
+	}
+
+	unixtimeStart = time.Now().Unix()
+	msg, err = SyncUnitRepo(ctx, unitPath, command.Branch, command.StorageUrl, grant)
 	result.Steps = model.AddStepToSteps(result.Steps, "unit-repo-sync branch="+command.Branch, msg, err, unixtimeStart)
 	if err != nil {
 		result.Success = 0

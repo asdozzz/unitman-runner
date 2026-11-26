@@ -1,10 +1,13 @@
 package unit
 
 import (
+	"context"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"runner/temporal/credentials"
 )
 
 const (
@@ -15,13 +18,32 @@ const (
 // SyncUnitRepo выполняет seed или обновление git-репозитория внутри юнита.
 // Push не выполняется: обновление только забирает изменения и сохраняет
 // локальные правки через rebase --autostash.
-func SyncUnitRepo(unitPath, branch, storageURL string) (string, error) {
-	return ExecInUnitContainerWithOptions(unitPath, unitRepoScriptPath, UnitExecOptions{
-		Env: []string{
-			"UNITMAN_REPO_BRANCH=" + branch,
-			"UNITMAN_REPO_URL=" + storageURL,
-		},
-	})
+//
+// URL обязан быть чистым; креденшелы передаются через askpass-файл,
+// скопированный в контейнер, и удаляются сразу после операции.
+func SyncUnitRepo(
+	ctx context.Context,
+	unitPath, branch, storageURL string,
+	grant credentials.Grant,
+) (string, error) {
+	cleanURL, err := CleanRepoURL(storageURL)
+	if err != nil {
+		return "", err
+	}
+
+	credEnv, cleanup, err := InstallGitCredentialsForUnit(ctx, unitPath, unitComposeService, grant)
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
+
+	env := []string{
+		"UNITMAN_REPO_BRANCH=" + branch,
+		"UNITMAN_REPO_URL=" + cleanURL,
+	}
+	env = append(env, credEnv...)
+
+	return ExecInUnitContainerContext(ctx, unitPath, unitRepoScriptPath, UnitExecOptions{Env: env})
 }
 
 // ReadUnitConfig читает unitman.yaml из рабочего дерева внутри юнита.

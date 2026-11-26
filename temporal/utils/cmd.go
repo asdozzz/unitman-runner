@@ -126,7 +126,7 @@ func ExecCommandWithTimeout(workingDirectory string, app []string, timeout time.
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	return execCommand(ctx, workingDirectory, app, timeout, cancel)
+	return execCommand(ctx, workingDirectory, app, timeout, cancel, nil)
 }
 
 // ExecCommandContext выполняет команду с привязкой к родительскому контексту.
@@ -135,16 +135,40 @@ func ExecCommandContext(ctx context.Context, workingDirectory string, app []stri
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	return execCommand(ctx, workingDirectory, app, 0, cancel)
+	return execCommand(ctx, workingDirectory, app, 0, cancel, nil)
 }
 
-func execCommand(ctx context.Context, workingDirectory string, app []string, timeout time.Duration, cancel func()) (string, error) {
+// ExecCommandContextWithEnv выполняет команду с дополнительными переменными
+// окружения. Значения env не попадают в argv и, следовательно, не видны в ps.
+func ExecCommandContextWithEnv(
+	ctx context.Context,
+	workingDirectory string,
+	app []string,
+	env []string,
+) (string, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	return execCommand(ctx, workingDirectory, app, 0, cancel, env)
+}
+
+func execCommand(
+	ctx context.Context,
+	workingDirectory string,
+	app []string,
+	timeout time.Duration,
+	cancel func(),
+	extraEnv []string,
+) (string, error) {
 	if cancel == nil {
 		cancel = func() {}
 	}
 
 	cmd := exec.Command(app[0], app[1:]...)
 	cmd.Dir = workingDirectory
+	if len(extraEnv) > 0 {
+		cmd.Env = append(os.Environ(), extraEnv...)
+	}
 	applyEnvFileForCompose(cmd, workingDirectory, app)
 	// Ввод не поддерживаем: дочерний процесс читает из /dev/null и сразу получает EOF.
 	cmd.Stdin = nil
