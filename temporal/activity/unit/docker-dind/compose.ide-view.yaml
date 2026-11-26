@@ -1,0 +1,8 @@
+# Режим просмотра: рабочая копия монтируется read-only, git-индекс копируется
+# в tmpfs IDE (см. IdeGitIndexCommand).
+services:
+  ide:
+    volumes:
+      - unit_app:/home/coder/project:ro
+    environment:
+      - GIT_INDEX_FILE=/tmp/git-index

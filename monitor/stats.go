@@ -16,7 +16,7 @@ const (
 	// unitMemoryLimitEnvKey — переменная .env юнита с лимитом памяти.
 	unitMemoryLimitEnvKey = "UNITMAN_MEMORY_LIMIT"
 	// defaultUnitMemoryLimit — дефолт из compose:
-	// `${UNITMAN_MEMORY_LIMIT:-3g}` в compose.dind.yaml / compose.podman.yaml.
+	// `${UNITMAN_MEMORY_LIMIT:-3g}` в compose.dind.yaml.
 	defaultUnitMemoryLimit = "3g"
 )
 

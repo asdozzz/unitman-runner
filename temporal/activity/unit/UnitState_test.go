@@ -16,20 +16,8 @@ func TestUnitVolumesUsesStableUnitID(t *testing.T) {
 	if volumes.Docker != "unitman_unit_docker_unit-123" {
 		t.Fatalf("unexpected docker volume: %q", volumes.Docker)
 	}
-	if volumes.Containers != "unitman_unit_containers_unit-123" {
-		t.Fatalf("unexpected containers volume: %q", volumes.Containers)
-	}
-	if len(volumes.Names()) != 3 {
-		t.Fatalf("expected three volume names, got %#v", volumes.Names())
-	}
-}
-
-func TestSelectUnitComposeFile(t *testing.T) {
-	if got := SelectUnitComposeFile("asdozzz/unitman-unit:latest"); got != unitPodmanComposeFile {
-		t.Fatalf("unexpected podman compose file: %q", got)
-	}
-	if got := SelectUnitComposeFile("asdozzz/dind-unit:latest"); got != unitDindComposeFile {
-		t.Fatalf("unexpected dind compose file: %q", got)
+	if len(volumes.Names()) != 2 {
+		t.Fatalf("expected two volume names, got %#v", volumes.Names())
 	}
 }
 

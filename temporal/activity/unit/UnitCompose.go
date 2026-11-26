@@ -12,15 +12,17 @@ import (
 
 const (
 	unitTemplatesRelativePath = "temporal/activity/unit/docker-dind"
-	unitDindComposeFile       = "compose.dind.yaml"
-	unitPodmanComposeFile     = "compose.podman.yaml"
-	unitPodmanImageName       = "asdozzz/unitman-unit:latest"
+	unitComposeTemplate       = "compose.dind.yaml"
+	unitComposeTarget         = "compose.yaml"
+	unitIdeViewTemplate       = "compose.ide-view.yaml"
+	unitIdeEditTemplate       = "compose.ide-edit.yaml"
 )
 
-// PrepareUnitFiles выбирает compose-файл по образу юнита и копирует его в
-// рабочий каталог как compose.yaml. Dockerfile больше не генерируется: образы
-// unit и ide предсобраны и подключаются через image:, а не build:.
-func PrepareUnitFiles(unitPath string, imageConfig model.ImageConfigStruct) ([]model.Step, error) {
+// PrepareUnitFiles копирует статичные compose-шаблоны в рабочий каталог юнита:
+// базовый compose.yaml и два неизменяемых override-файла для режимов IDE.
+// Dockerfile не генерируется: образы unit и ide предсобраны и подключаются
+// через image:, а не build:.
+func PrepareUnitFiles(unitPath string) ([]model.Step, error) {
 	steps := []model.Step{}
 
 	currentPath, err := os.Getwd()
@@ -29,27 +31,28 @@ func PrepareUnitFiles(unitPath string, imageConfig model.ImageConfigStruct) ([]m
 		return steps, err
 	}
 
-	composeFile := SelectUnitComposeFile(imageConfig.Image)
-	source := filepath.Join(currentPath, unitTemplatesRelativePath, composeFile)
-	target := filepath.Join(unitPath, "compose.yaml")
+	templates := []struct {
+		source string
+		target string
+	}{
+		{unitComposeTemplate, unitComposeTarget},
+		{unitIdeViewTemplate, unitIdeViewTemplate},
+		{unitIdeEditTemplate, unitIdeEditTemplate},
+	}
 
-	unixtimeStart := time.Now().Unix()
-	err = CopyFileContents(source, target)
-	steps = model.AddStepToSteps(steps, "make compose.yaml from "+composeFile, "", err, unixtimeStart)
-	if err != nil {
-		return steps, fmt.Errorf("не удалось подготовить compose.yaml: %w", err)
+	for _, template := range templates {
+		source := filepath.Join(currentPath, unitTemplatesRelativePath, template.source)
+		target := filepath.Join(unitPath, template.target)
+
+		unixtimeStart := time.Now().Unix()
+		err = CopyFileContents(source, target)
+		steps = model.AddStepToSteps(steps, "make "+template.target+" from "+template.source, "", err, unixtimeStart)
+		if err != nil {
+			return steps, fmt.Errorf("не удалось подготовить %s: %w", template.target, err)
+		}
 	}
 
 	return steps, nil
-}
-
-// SelectUnitComposeFile выбирает compose-файл по образу юнита.
-func SelectUnitComposeFile(image string) string {
-	if image == unitPodmanImageName {
-		return unitPodmanComposeFile
-	}
-
-	return unitDindComposeFile
 }
 
 // WriteUnitEnvFile атомарно перезаписывает .env юнита.

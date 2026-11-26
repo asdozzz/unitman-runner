@@ -15,6 +15,17 @@
 `RunnerHealthCheckActivity` и `OchistkaDockeraActivity`. Теперь они удалены, а
 мониторинг работает как фоновые горутины внутри процесса раннера (`monitor`).
 
+## Раскладка и предстартовые проверки
+
+- Бинарь раннера самодостаточен: шаблоны unit/workspace и конфиги proxy
+  встроены через `go:embed` и распаковываются при `start` в рабочий каталог.
+- `UNITMAN_HOME` задаёт рабочий каталог (`config.json`, `projects/`,
+  `state.db`); по умолчанию используется текущий каталог.
+- Перед запуском воркера выполняется preflight: `docker info` должен
+  содержать runtime `sysbox-runc`. Fallback на privileged dind не
+  предусмотрен.
+- Для локальной отладки без sysbox: `UNITMAN_SKIP_PREFLIGHT=1`.
+
 ## Конфигурация раннера (multi-runner)
 
 Идентичность раннера хранится в `config.json` и создаётся командой

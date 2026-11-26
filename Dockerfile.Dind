@@ -23,16 +23,6 @@ RUN apk add --no-cache bash ripgrep libstdc++ libgcc git
 
 COPY --from=opencode /usr/local/bin/opencode /usr/local/bin/opencode
 
-# 1. Создаем обертку для podman -> docker
-RUN echo '#!/bin/sh' > /usr/local/bin/podman && \
-    echo 'exec docker "$@"' >> /usr/local/bin/podman && \
-    chmod +x /usr/local/bin/podman
-
-# 2. Создаем обертку для podman-compose -> docker compose
-RUN echo '#!/bin/sh' > /usr/local/bin/podman-compose && \
-    echo 'exec docker compose "$@"' >> /usr/local/bin/podman-compose && \
-    chmod +x /usr/local/bin/podman-compose
-
 COPY temporal/activity/unit/docker-dind/entrypoint.sh /usr/local/bin/unit-entrypoint.sh
 COPY temporal/activity/unit/docker-dind/unit-repo-sync.sh /usr/local/bin/unit-repo-sync
 COPY temporal/activity/unit/docker-dind/unit-volumes-sync.sh /usr/local/bin/unit-volumes-sync

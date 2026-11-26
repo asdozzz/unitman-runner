@@ -7,7 +7,6 @@
 
 - `/app` юнита — external-том `unitman_unit_app_<UnitId>`.
 - Данные внутреннего Docker — external-том `unitman_unit_docker_<UnitId>`.
-- Данные podman-варианта — external-том `unitman_unit_containers_<UnitId>`.
 - `projects/<ProjectId>/mainBranch/.git` монтируется в юнит read-only как
   `/seed/git` и используется только для первичного seed.
 - Вложения готовятся на хосте в `<unit>/seed/volumes` и монтируются в юнит
@@ -99,7 +98,7 @@
 - рабочее дерево `/app`, включая изменённые и неотслеживаемые файлы;
 - `.git` и локальные коммиты;
 - вложения в `unitman_volumes`;
-- данные внутреннего Docker/podman;
+- данные внутреннего Docker;
 - локальные контейнеры и их тома внутри внутреннего движка.
 
 Не сохраняется при пересоздании контейнера:

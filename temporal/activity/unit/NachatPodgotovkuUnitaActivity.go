@@ -30,10 +30,8 @@ type NachatPodgotovkuUnita struct {
 	StorageUrl        string
 	Commands          []string
 	Variables         []model.UnitConfigVariable
-	Caches            []Cache
 	ContainerSettings ContainerSettings
 	Branch            string
-	ImageConfig       model.ImageConfigStruct
 	Volumes           []Volume
 	// RezhimRedaktora — режим IDE-сайдкара `view`|`edit`. Отсутствие поля у
 	// старых бэкендов трактуется как `view` (обратная совместимость).
@@ -114,24 +112,18 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		return wrapResultatPogotovki(result), nil
 	}
 
-	// Для разработки базовый образ можно переопределить через окружение,
-	// не меняя unitman.yaml проекта. Значение влияет и на выбор compose.
-	if override := strings.TrimSpace(os.Getenv("UNITMAN_UNIT_IMAGE_NAME")); override != "" {
-		command.ImageConfig.Image = override
-	}
-
-	fileSteps, err := PrepareUnitFiles(unitPath, command.ImageConfig)
+	fileSteps, err := PrepareUnitFiles(unitPath)
 	result.Steps = append(result.Steps, fileSteps...)
 	if err != nil {
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil
 	}
 
-	// Режим IDE применяется к compose.yaml до docker compose up: для `edit`
-	// том проекта монтируется `:rw`, для `view` — `:ro`.
+	// Режим IDE сохраняется отдельным файлом и выбирает статичный
+	// compose.ide-view.yaml или compose.ide-edit.yaml при запуске IDE.
 	rezhim := NormalizeRezhimRedaktora(command.RezhimRedaktora)
 	unixtimeStart = time.Now().Unix()
-	err = ApplyIdeEditorMode(unitPath, rezhim)
+	err = WriteIdeMode(unitPath, rezhim)
 	result.Steps = model.AddStepToSteps(result.Steps, "apply ide mode="+rezhim, "", err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
@@ -164,24 +156,21 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		return wrapResultatPogotovki(result), nil
 	}
 
-	// IDE собирается заранее; для разработки можно переопределить образ
-	// через UNITMAN_IDE_IMAGE, не меняя compose-шаблон.
-	ideImage := strings.TrimSpace(os.Getenv("UNITMAN_IDE_IMAGE"))
-	if ideImage == "" {
-		ideImage = "asdozzz/unitman-ide:latest"
-	}
+	// Образы юнита и IDE фиксируются версией релиза (ldflags) и реестром
+	// установки; конфиг проекта на них не влияет.
+	unitImage := configuration.UnitImageRef()
+	ideImage := configuration.IdeImageRef()
 
 	envEntries := [][2]string{
 		{"UNITMAN_UNIT_ID", command.Id},
 		{"UNITMAN_UNIT_NAME", command.Name},
 		{"UNITMAN_PROJECT_NAME", command.ProjectName},
 		{"UNITMAN_BRANCH_NAME", command.Branch},
-		{"UNITMAN_UNIT_IMAGE_NAME", command.ImageConfig.Image},
+		{"UNITMAN_UNIT_IMAGE", unitImage},
 		{"UNITMAN_IDE_IMAGE", ideImage},
 		{"COMPOSE_PROJECT_NAME", command.Name + "_" + command.ProjectName},
 		{"UNITMAN_UNIT_APP_VOLUME", volumes.App},
 		{"UNITMAN_UNIT_DOCKER_VOLUME", volumes.Docker},
-		{"UNITMAN_UNIT_CONTAINERS_VOLUME", volumes.Containers},
 		{"UNITMAN_MEMORY_LIMIT", command.ContainerSettings.MemoryLimit},
 		{"UNITMAN_REGISTRY_HOST", registryHost},
 		{"UNITMAN_CACHE_REPO", cacheRepo},
@@ -269,8 +258,6 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		result.Success = 0
 		return wrapResultatPogotovki(result), nil
 	}
-
-	RestoreCache(command.ProjectName, command.Name, command.ProjectId, command.Id, command.Caches)
 
 	for _, commandString := range command.Commands {
 		args := UnitContainerCommand(commandString)

@@ -7,20 +7,6 @@ import (
 	"testing"
 )
 
-const testCompose = `services:
-  unit:
-    image: test
-  ide:
-    image: test-ide
-    read_only: true
-    volumes:
-      - unit_app:/home/coder/project:ro
-    environment:
-      - GIT_OPTIONAL_LOCKS=0
-      - GIT_INDEX_FILE=/tmp/git-index
-      - HOME=/home/coder
-`
-
 func TestNormalizeRezhimRedaktora(t *testing.T) {
 	cases := map[string]string{
 		"":        RezhimRedaktoraView,
@@ -39,66 +25,31 @@ func TestNormalizeRezhimRedaktora(t *testing.T) {
 	}
 }
 
-func TestApplyIdeEditorModeContentEdit(t *testing.T) {
-	result := applyIdeEditorModeContent(testCompose, RezhimRedaktoraEdit)
-
-	if !strings.Contains(result, "- unit_app:/home/coder/project:rw") {
-		t.Fatalf("edit mode must mount project volume rw:\n%s", result)
-	}
-	if strings.Contains(result, "GIT_INDEX_FILE") {
-		t.Fatalf("edit mode must use the real .git/index:\n%s", result)
-	}
-	if strings.Contains(result, ":ro") {
-		t.Fatalf("edit mode must not keep ro project mount:\n%s", result)
-	}
-	if !strings.Contains(result, `user: "0:0"`) {
-		t.Fatalf("edit mode must run ide as root to write the root-owned volume:\n%s", result)
-	}
-	if !strings.Contains(result, "- UNITMAN_IDE_EDIT_MODE=1") {
-		t.Fatalf("edit mode must select editable ide settings:\n%s", result)
-	}
-}
-
-func TestApplyIdeEditorModeContentView(t *testing.T) {
-	// Сначала переводим файл в edit, затем обратно в view: обе операции
-	// идемпотентны и не дублируют GIT_INDEX_FILE.
-	edit := applyIdeEditorModeContent(testCompose, RezhimRedaktoraEdit)
-	view := applyIdeEditorModeContent(edit, RezhimRedaktoraView)
-
-	if !strings.Contains(view, "- unit_app:/home/coder/project:ro") {
-		t.Fatalf("view mode must mount project volume ro:\n%s", view)
-	}
-	if strings.Count(view, "GIT_INDEX_FILE=/tmp/git-index") != 1 {
-		t.Fatalf("view mode must have exactly one GIT_INDEX_FILE:\n%s", view)
-	}
-	if strings.Index(view, "GIT_INDEX_FILE") > strings.Index(view, "HOME=/home/coder") {
-		t.Fatalf("GIT_INDEX_FILE must stay before HOME:\n%s", view)
-	}
-	if strings.Contains(view, `user: "0:0"`) {
-		t.Fatalf("view mode must not run ide as root:\n%s", view)
-	}
-	if strings.Contains(view, "UNITMAN_IDE_EDIT_MODE") {
-		t.Fatalf("view mode must not set edit settings flag:\n%s", view)
-	}
-}
-
-func TestApplyIdeEditorModeWritesCompose(t *testing.T) {
+func TestWriteIdeModeAndRead(t *testing.T) {
 	dir := t.TempDir()
-	composePath := filepath.Join(dir, "compose.yaml")
-	if err := os.WriteFile(composePath, []byte(testCompose), 0644); err != nil {
-		t.Fatal(err)
+
+	if got := ReadIdeMode(dir); got != RezhimRedaktoraView {
+		t.Fatalf("default ide mode = %q, want view", got)
 	}
 
-	if err := ApplyIdeEditorMode(dir, RezhimRedaktoraEdit); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err := WriteIdeMode(dir, " EDIT "); err != nil {
+		t.Fatalf("WriteIdeMode: %v", err)
+	}
+	if got := ReadIdeMode(dir); got != RezhimRedaktoraEdit {
+		t.Fatalf("ide mode = %q, want edit", got)
 	}
 
-	content, err := os.ReadFile(composePath)
-	if err != nil {
-		t.Fatal(err)
+	if err := WriteIdeMode(dir, "unknown"); err != nil {
+		t.Fatalf("WriteIdeMode: %v", err)
 	}
-	if !strings.Contains(string(content), "/home/coder/project:rw") {
-		t.Fatalf("compose.yaml was not switched to edit:\n%s", string(content))
+	if got := ReadIdeMode(dir); got != RezhimRedaktoraView {
+		t.Fatalf("ide mode = %q, want view", got)
+	}
+}
+
+func TestWriteIdeModeRejectsEmptyPath(t *testing.T) {
+	if err := WriteIdeMode("", RezhimRedaktoraView); err == nil {
+		t.Fatal("expected an error for an empty unit path")
 	}
 }
 
@@ -138,9 +89,22 @@ func TestFindUnitDirectoryReportsMissingUnit(t *testing.T) {
 }
 
 func TestIdeRecreateCommand(t *testing.T) {
-	got := IdeRecreateCommand()
-	want := []string{"docker", "compose", "--profile", "ide", "up", "-d", "--no-deps", "ide"}
-	if strings.Join(got, " ") != strings.Join(want, " ") {
+	dir := t.TempDir()
+	want := []string{
+		"docker", "compose",
+		"-f", "compose.yaml",
+		"-f", "compose.ide-view.yaml",
+		"--profile", "ide", "up", "-d", "--no-deps", "ide",
+	}
+	if got := IdeRecreateCommand(dir); strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Fatalf("unexpected recreate command: %#v", got)
+	}
+
+	if err := WriteIdeMode(dir, RezhimRedaktoraEdit); err != nil {
+		t.Fatal(err)
+	}
+	want[5] = "compose.ide-edit.yaml"
+	if got := IdeRecreateCommand(dir); strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("unexpected edit recreate command: %#v", got)
 	}
 }

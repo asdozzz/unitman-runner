@@ -22,7 +22,6 @@ type NachatZapuskUnita struct {
 	StorageUrl  string
 	Commands    []string
 	Variables   []model.UnitConfigVariable
-	Caches      []Cache
 	Branch      string
 }
 
@@ -121,7 +120,6 @@ func NachatZapuskUnitaActivity(ctx context.Context, command NachatZapuskUnita) (
 			}
 		}
 	*/
-	go MakeCache(command.ProjectName, command.Name, command.ProjectId, command.Id, command.Caches)
 
 	result.Success = 1
 	return wrapResultatZapuskaSuccess(result), nil

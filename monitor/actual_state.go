@@ -12,7 +12,6 @@ import (
 )
 
 // dockerPSRecord — подмножество полей вывода `docker ps --format '{{json .}}'`.
-// Podman может отдавать поле Name вместо Names.
 type dockerPSRecord struct {
 	Names string `json:"Names"`
 	Name  string `json:"Name"`

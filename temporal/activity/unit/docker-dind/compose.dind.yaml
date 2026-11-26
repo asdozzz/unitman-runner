@@ -3,7 +3,8 @@ services:
     container_name: ${UNITMAN_UNIT_NAME}.${UNITMAN_PROJECT_NAME}
     runtime: sysbox-runc
     # Предсобранный образ: dind + OpenCode + entrypoint. Сборки на месте нет.
-    image: "${UNITMAN_UNIT_IMAGE_NAME:-asdozzz/dind-unit:latest}"
+    # Значение приходит из раннера и фиксируется версией релиза.
+    image: ${UNITMAN_UNIT_IMAGE:?UNITMAN_UNIT_IMAGE is required}
     mem_limit: ${UNITMAN_MEMORY_LIMIT:-3g}
     memswap_limit: ${UNITMAN_MEMORY_LIMIT:-3g}
     stop_grace_period: 30s
@@ -35,9 +36,11 @@ services:
   #
   # Профиль ide означает, что подготовка юнита НЕ поднимает редактор.
   # IDE стартует по требованию при открытии ссылки редактора.
+  # Монтирование рабочей копии и режим доступа задаются статичными
+  # override-файлами compose.ide-view.yaml и compose.ide-edit.yaml.
   ide:
     profiles: ["ide"]
-    image: "${UNITMAN_IDE_IMAGE:-asdozzz/unitman-ide:latest}"
+    image: ${UNITMAN_IDE_IMAGE:?UNITMAN_IDE_IMAGE is required}
     network_mode: "service:unit"
     depends_on:
       - unit
@@ -48,8 +51,6 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    volumes:
-      - unit_app:/home/coder/project:ro
     tmpfs:
       - /tmp
       - /run
@@ -59,7 +60,6 @@ services:
       - /home/coder/.cache
     environment:
       - GIT_OPTIONAL_LOCKS=0
-      - GIT_INDEX_FILE=/tmp/git-index
       - HOME=/home/coder
 
 

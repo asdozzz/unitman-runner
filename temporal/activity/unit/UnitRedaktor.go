@@ -123,144 +123,52 @@ func findUnitDirectory(root, unitID string) (string, error) {
 	return "", fmt.Errorf("каталог юнита %q не найден в %s", unitID, projectsDir)
 }
 
-// ApplyIdeEditorMode готовит compose.yaml к нужному режиму доступа IDE к
-// рабочей копии: `view` — том `:ro` и git-индекс в /tmp, `edit` — том `:rw`
-// и настоящий .git/index. Файл compose.yaml перегенерируется при подготовке,
-// поэтому функция идемпотентна.
-func ApplyIdeEditorMode(unitPath, mode string) error {
+// ideModeFileName — файл с выбранным режимом IDE. compose.yaml и
+// override-файлы остаются неизменяемыми.
+const ideModeFileName = "ide-mode"
+
+// WriteIdeMode сохраняет режим IDE для юнита. Режим применяется выбором
+// статичного compose.ide-view.yaml или compose.ide-edit.yaml, без правки YAML.
+func WriteIdeMode(unitPath, mode string) error {
 	if strings.TrimSpace(unitPath) == "" {
 		return fmt.Errorf("не задан каталог юнита")
 	}
 
-	composePath := filepath.Join(unitPath, "compose.yaml")
-	content, err := os.ReadFile(composePath)
+	normalized := NormalizeRezhimRedaktora(mode)
+
+	return os.WriteFile(filepath.Join(unitPath, ideModeFileName), []byte(normalized+"\n"), 0644)
+}
+
+// ReadIdeMode читает сохранённый режим IDE; по умолчанию — view.
+func ReadIdeMode(unitPath string) string {
+	content, err := os.ReadFile(filepath.Join(unitPath, ideModeFileName))
 	if err != nil {
-		return fmt.Errorf("прочитать compose.yaml: %w", err)
+		return RezhimRedaktoraView
 	}
 
-	updated := applyIdeEditorModeContent(string(content), NormalizeRezhimRedaktora(mode))
-	if updated == string(content) {
-		return nil
-	}
-
-	if err := os.WriteFile(composePath, []byte(updated), 0644); err != nil {
-		return fmt.Errorf("записать compose.yaml: %w", err)
-	}
-
-	return nil
-}
-
-// applyIdeEditorModeContent — чистовая часть ApplyIdeEditorMode, вынесена для
-// тестов без файловой системы.
-//
-// В режиме edit IDE получает:
-//   - том проекта `:rw` и настоящий .git/index;
-//   - запуск от root, иначе coder не сможет писать в root-owned том;
-//   - UNITMAN_IDE_EDIT_MODE=1 — entrypoint выбирает settings без readonly.
-func applyIdeEditorModeContent(content, mode string) string {
-	edit := mode == RezhimRedaktoraEdit
-	access := "ro"
-	if edit {
-		access = "rw"
-	}
-
-	lines := strings.Split(content, "\n")
-	cleaned := make([]string, 0, len(lines)+2)
-	inIde := false
-	ideIndex := -1
-	ideImageIndex := -1
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-
-		if trimmed == "ide:" && indent == "  " {
-			inIde = true
-			ideIndex = len(cleaned)
-		} else if inIde && trimmed != "" && len(indent) <= 2 {
-			inIde = false
-		}
-
-		if strings.HasPrefix(trimmed, "- unit_app:/home/coder/project") {
-			line = indent + "- unit_app:/home/coder/project:" + access
-		}
-
-		if strings.HasPrefix(trimmed, "- GIT_INDEX_FILE=") ||
-			strings.HasPrefix(trimmed, "- UNITMAN_IDE_EDIT_MODE=") {
-			continue
-		}
-
-		// Маркер root-запуска IDE ставим только для edit и всегда убираем в view.
-		if inIde && trimmed == `user: "0:0"` {
-			continue
-		}
-
-		if inIde && strings.HasPrefix(trimmed, "image:") {
-			ideImageIndex = len(cleaned)
-		}
-
-		cleaned = append(cleaned, line)
-	}
-
-	if edit {
-		userLine := `    user: "0:0"`
-		switch {
-		case ideImageIndex >= 0:
-			cleaned = insertLineAt(cleaned, ideImageIndex+1, userLine)
-		case ideIndex >= 0:
-			cleaned = insertLineAt(cleaned, ideIndex+1, userLine)
-		}
-	}
-
-	// GIT_INDEX_FILE нужен только read-only IDE; в edit используется .git/index.
-	envLine := ""
-	if edit {
-		envLine = "- UNITMAN_IDE_EDIT_MODE=1"
-	} else {
-		envLine = "- GIT_INDEX_FILE=/tmp/git-index"
-	}
-
-	homeIndex, homeIndent := findLinePrefix(cleaned, "- HOME=/home/coder")
-	if homeIndex >= 0 {
-		cleaned = insertLineAt(cleaned, homeIndex, homeIndent+envLine)
-	} else {
-		cleaned = append(cleaned, "      "+envLine)
-	}
-
-	return strings.Join(cleaned, "\n")
-}
-
-// insertLineAt вставляет строку в позицию index, не портя исходный срез.
-func insertLineAt(lines []string, index int, line string) []string {
-	if index < 0 || index > len(lines) {
-		index = len(lines)
-	}
-
-	result := make([]string, 0, len(lines)+1)
-	result = append(result, lines[:index]...)
-	result = append(result, line)
-	result = append(result, lines[index:]...)
-
-	return result
-}
-
-// findLinePrefix ищет первую строку с заданным trimmed-префиксом и возвращает
-// её индекс и отступ.
-func findLinePrefix(lines []string, prefix string) (int, string) {
-	for index, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), prefix) {
-			return index, line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-		}
-	}
-
-	return -1, "      "
+	return NormalizeRezhimRedaktora(string(content))
 }
 
 // IdeRecreateCommand запускает или пересоздаёт только IDE-сайдкар, не трогая
 // контейнер юнита и его тома. Профиль ide включает сервис, который не входит
-// в обычный `docker compose up` подготовки.
-func IdeRecreateCommand() []string {
-	return []string{"docker", "compose", "--profile", "ide", "up", "-d", "--no-deps", ideComposeService}
+// в обычный `docker compose up` подготовки. Режим доступа выбирается
+// статичным override-файлом, а не правкой compose.yaml.
+func IdeRecreateCommand(unitPath string) []string {
+	return []string{
+		"docker", "compose",
+		"-f", unitComposeTarget,
+		"-f", ideOverrideFile(ReadIdeMode(unitPath)),
+		"--profile", "ide", "up", "-d", "--no-deps", ideComposeService,
+	}
+}
+
+// ideOverrideFile возвращает статичный override-файл для режима IDE.
+func ideOverrideFile(mode string) string {
+	if NormalizeRezhimRedaktora(mode) == RezhimRedaktoraEdit {
+		return unitIdeEditTemplate
+	}
+
+	return unitIdeViewTemplate
 }
 
 // UnitServiceRunning сообщает, запущен ли контейнер unit в compose-проекте.
@@ -301,7 +209,7 @@ func IdeServiceRunning(unitPath string) (bool, error) {
 
 // RecreateIde пересоздаёт IDE-сайдкар и ждёт его готовности.
 func RecreateIde(unitPath string) error {
-	if _, err := utils.ExecCommand(unitPath, IdeRecreateCommand()); err != nil {
+	if _, err := utils.ExecCommand(unitPath, IdeRecreateCommand(unitPath)); err != nil {
 		return fmt.Errorf("пересоздать IDE-сайдкар: %w", err)
 	}
 
@@ -309,10 +217,10 @@ func RecreateIde(unitPath string) error {
 }
 
 // ApplyIdeModeToPreparedUnit применяет режим IDE к уже подготовленному юниту.
-// Если контейнеры не запущены, режим сохраняется в compose.yaml и применится
+// Если контейнеры не запущены, режим сохраняется в ide-mode и применится
 // при следующем запуске (решение 15.11-а).
 func ApplyIdeModeToPreparedUnit(unitPath, mode string) (bool, error) {
-	if err := ApplyIdeEditorMode(unitPath, mode); err != nil {
+	if err := WriteIdeMode(unitPath, mode); err != nil {
 		return false, err
 	}
 
@@ -631,7 +539,7 @@ func IzmenitRezhimRedaktoraUnitaActivity(
 	}
 
 	unixtimeStart = time.Now().Unix()
-	err = ApplyIdeEditorMode(unitPath, mode)
+	err = WriteIdeMode(unitPath, mode)
 	result.Steps = model.AddStepToSteps(result.Steps, "apply ide mode="+mode, "", err, unixtimeStart)
 	if err != nil {
 		result.Success = 0
@@ -707,7 +615,7 @@ func PodgotovitSessiyuRedaktoraActivity(
 	}
 
 	unixtimeStart = time.Now().Unix()
-	err = ApplyIdeEditorMode(unitPath, mode)
+	err = WriteIdeMode(unitPath, mode)
 	result.Steps = model.AddStepToSteps(result.Steps, "apply ide mode="+mode, "", err, unixtimeStart)
 	if err != nil {
 		result.Success = 0

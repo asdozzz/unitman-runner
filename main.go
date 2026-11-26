@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"runner/config"
+	"runner/preflight"
 	"runner/temporal"
 	"runner/temporal/activity/unit"
 )
@@ -31,6 +32,11 @@ func main() {
 		os.Exit(2)
 	}
 
+	if err := enterHome(); err != nil {
+		fmt.Fprintln(os.Stderr, "home:", err)
+		os.Exit(1)
+	}
+
 	switch os.Args[1] {
 	case "init":
 		if err := runInit(os.Stdin, os.Stdout, os.Args[2:]); err != nil {
@@ -38,6 +44,14 @@ func main() {
 			os.Exit(1)
 		}
 	case "start":
+		if err := extractEmbeddedAssets(); err != nil {
+			fmt.Fprintln(os.Stderr, "assets:", err)
+			os.Exit(1)
+		}
+		if err := preflight.Check(); err != nil {
+			fmt.Fprintln(os.Stderr, "preflight:", err)
+			os.Exit(1)
+		}
 		foreground, err := parseStartArgs(os.Args[2:])
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "start:", err)

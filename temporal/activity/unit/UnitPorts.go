@@ -12,7 +12,7 @@ import (
 
 const (
 	// collectUnitPortsCommand собирает JSON-описание всех запущенных
-	// контейнеров внутри Docker/Podman юнита.
+	// контейнеров внутри Docker юнита.
 	collectUnitPortsCommand = `ids=$(docker ps -q --no-trunc); if [ -n "$ids" ]; then docker inspect $ids; fi`
 
 	// unitPortsStepCommand — короткое имя шага сбора портов в Steps.

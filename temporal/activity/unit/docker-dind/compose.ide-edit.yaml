@@ -1,0 +1,9 @@
+# Режим редактирования: рабочая копия монтируется read-write, IDE запускается
+# от root (том принадлежит root), git использует настоящий .git/index.
+services:
+  ide:
+    user: "0:0"
+    volumes:
+      - unit_app:/home/coder/project:rw
+    environment:
+      - UNITMAN_IDE_EDIT_MODE=1

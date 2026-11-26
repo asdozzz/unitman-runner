@@ -10,9 +10,8 @@ import (
 )
 
 const (
-	unitAppVolumePrefix        = "unitman_unit_app_"
-	unitDockerVolumePrefix     = "unitman_unit_docker_"
-	unitContainersVolumePrefix = "unitman_unit_containers_"
+	unitAppVolumePrefix    = "unitman_unit_app_"
+	unitDockerVolumePrefix = "unitman_unit_docker_"
 
 	// unitReadyTimeout — сколько ждём готовности dockerd и каталога /app
 	// после docker compose up.
@@ -22,23 +21,21 @@ const (
 // UnitVolumeSet — external-тома, которые принадлежат конкретному юниту.
 // Имена привязаны к UnitId, поэтому не зависят от имени юнита и проекта.
 type UnitVolumeSet struct {
-	App        string
-	Docker     string
-	Containers string
+	App    string
+	Docker string
 }
 
 // UnitVolumes возвращает имена томов для указанного UnitId.
 func UnitVolumes(unitID string) UnitVolumeSet {
 	return UnitVolumeSet{
-		App:        unitAppVolumePrefix + unitID,
-		Docker:     unitDockerVolumePrefix + unitID,
-		Containers: unitContainersVolumePrefix + unitID,
+		App:    unitAppVolumePrefix + unitID,
+		Docker: unitDockerVolumePrefix + unitID,
 	}
 }
 
 // Names возвращает все имена томов юнита.
 func (volumes UnitVolumeSet) Names() []string {
-	return []string{volumes.App, volumes.Docker, volumes.Containers}
+	return []string{volumes.App, volumes.Docker}
 }
 
 // EnsureUnitVolumes создаёт external-тома юнита, если их ещё нет.

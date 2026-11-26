@@ -2,16 +2,31 @@
 
 ## Образы
 
-Подготовка юнита больше не собирает образы на месте. Используются два
-предсобранных образа:
+Подготовка юнита не собирает образы на месте. Используются два предсобранных
+образа:
 
 | Образ | Источник | Содержимое |
 |---|---|---|
-| `asdozzz/dind-unit:latest` | [`Dockerfile.Dind`](../Dockerfile.Dind) | `docker:dind`, OpenCode, git, entrypoint и скрипты синхронизации |
-| `asdozzz/unitman-ide:latest` | [`ide/Dockerfile`](../temporal/activity/unit/docker-dind/ide/Dockerfile) | code-server, git/wget, настройки и entrypoint IDE |
+| `unitman/unit` | [`Dockerfile.Dind`](../Dockerfile.Dind) | `docker:dind`, OpenCode, git, entrypoint и скрипты синхронизации |
+| `unitman/ide` | [`ide/Dockerfile`](../temporal/activity/unit/docker-dind/ide/Dockerfile) | code-server, git/wget, настройки и entrypoint IDE |
 
 Оба образа помечены `LABEL unitman.keep=true`, поэтому очистка раннера
 (`docker image prune -af --filter label!=unitman.keep=true`) их не удаляет.
+
+## Откуда берутся ссылки на образы
+
+Ссылки фиксируются при сборке раннера и не читаются из `unitman.yaml`:
+
+```dotenv
+UNITMAN_UNIT_IMAGE=<registryHost>/unitman/unit:<releaseVersion>
+UNITMAN_IDE_IMAGE=<registryHost>/unitman/ide:<releaseVersion>
+```
+
+- `<registryHost>` приходит из ответа регистрации раннера (`config.json`).
+- Репозитории и тег задаются при сборке через ldflags
+  (`runner/config.UnitImageRepository`, `IdeImageRepository`, `UnitImageTag`)
+  и по умолчанию используют `BuildVersion`.
+- Окружение процесса раннера и конфиг проекта образы не переопределяют.
 
 ## Сборка для разработки
 
@@ -21,7 +36,7 @@ make images-dev
 
 Собирает локальные теги:
 
-- `unitman/dind:dev`
+- `unitman/unit:dev`
 - `unitman/ide:dev`
 
 Для release-сборки и публикации:
@@ -33,38 +48,31 @@ make images-push
 Отдельные цели: `dind-dev`, `ide-dev`, `dind-build`, `ide-build`,
 `dind-push`, `ide-push`.
 
-## Как использовать dev-образы
+## Запуск с dev-образами
 
-- Базовый образ юнита задаётся в `unitman.yaml` проекта:
+Для локальной проверки соберите образ и опубликуйте его в реестре установки
+под именем `unitman/unit` или `unitman/ide` с нужным тегом, либо соберите
+раннер с переопределёнными ldflags:
 
-  ```yaml
-  build:
-    image: unitman/dind:dev
-  ```
-
-  или release-тегом `asdozzz/dind-unit:latest`.
-
-- Образ IDE не настраивается в `unitman.yaml`. Для разработки задайте
-  переменную окружения процесса раннера:
-
-  ```sh
-  UNITMAN_IDE_IMAGE=unitman/ide:dev ./main start
-  ```
-
-  Раннер прокидывает её в `.env` юнита, compose использует
-  `${UNITMAN_IDE_IMAGE:-asdozzz/unitman-ide:latest}`.
+```sh
+go build -ldflags "\
+  -X runner/config.UnitImageTag=dev" -o main .
+```
 
 ## Подготовка и запуск IDE
 
 1. Подготовка юнита выполняет `docker compose up -d` и поднимает только
    контейнер `unit`.
 2. Сервис `ide` объявлен с `profiles: ["ide"]` и при обычном `up` не стартует.
-3. IDE запускается по требованию:
-   - при запросе персональной ссылки редактора (`view` и `edit`);
-   - при включении режима редактирования.
+3. Режим IDE (`view` или `edit`) хранится в файле `ide-mode` и применяется
+   выбором статичного override-файла:
+   - `compose.ide-view.yaml` — рабочая копия `:ro`, git-индекс в `/tmp`;
+   - `compose.ide-edit.yaml` — рабочая копия `:rw`, запуск от root,
+     `UNITMAN_IDE_EDIT_MODE=1`.
 
-   Раннер выполняет `docker compose --profile ide up -d --no-deps ide` и ждёт
-   health-эндпоинт.
+   Раннер выполняет
+   `docker compose -f compose.yaml -f compose.ide-<mode>.yaml --profile ide up -d --no-deps ide`
+   и ждёт health-эндпоинт. Файлы compose не переписываются в рантайме.
 
 ## Ожидание первого запуска
 
