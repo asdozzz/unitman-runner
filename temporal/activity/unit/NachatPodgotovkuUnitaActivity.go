@@ -10,6 +10,7 @@ import (
 	"runner/config"
 	"runner/state"
 	"runner/temporal/activity/unit/model"
+	"runner/temporal/unitvariables"
 	"runner/temporal/utils"
 	"runner/threat"
 	"strings"
@@ -175,7 +176,14 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		{"UNITMAN_CACHE_REPO", cacheRepo},
 	}
 
-	for _, variableItem := range command.Variables {
+	variables, resolveErr := unitvariables.ResolveFromConfig(command.Variables, command.Id)
+	if resolveErr != nil {
+		result.Steps = model.AddStepToSteps(result.Steps, "resolve hidden variables", "", resolveErr, time.Now().Unix())
+		result.Success = 0
+		return wrapResultatPogotovki(result), nil
+	}
+
+	for _, variableItem := range variables {
 		envEntries = append(envEntries, [2]string{"UNITMAN_" + variableItem.Id, variableItem.Value})
 	}
 

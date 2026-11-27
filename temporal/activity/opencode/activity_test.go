@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runner/temporal/activity/workspace"
 	"strings"
 	"sync"
 	"testing"
@@ -741,5 +742,179 @@ func TestProgressSenderSkipsWhenTokenIsEmpty(t *testing.T) {
 
 	if calls != 0 {
 		t.Fatalf("progress without token must be skipped, calls=%d", calls)
+	}
+}
+
+// ─── артефакты хода ──────────────────────────────────────────────────────────
+
+// withArtifactWorkflow подменяет id workflow на время теста.
+func withArtifactWorkflow(t *testing.T, id string) {
+	t.Helper()
+	previous := workflowIDFunc
+	workflowIDFunc = func(context.Context) string { return id }
+	t.Cleanup(func() { workflowIDFunc = previous })
+}
+
+// withWorkspaceExec подменяет исполнение команд workspace и копирование из
+// контейнера. findOutput отдаётся на любую команду, содержащую "find ".
+func withWorkspaceExec(t *testing.T, findOutput string) *[]string {
+	t.Helper()
+
+	commands := make([]string, 0, 8)
+	previous := workspace.ExecCommandInWorkspace
+	workspace.ExecCommandInWorkspace = func(_ context.Context, _, command, _ string, _ []string) (string, error) {
+		commands = append(commands, command)
+		if strings.Contains(command, "find ") {
+			return findOutput, nil
+		}
+		return "", nil
+	}
+
+	previousCopy := copyFileFromWorkspace
+	copyFileFromWorkspace = func(_ context.Context, _, _, target string) (string, error) {
+		return "", os.WriteFile(target, []byte("hello"), 0644)
+	}
+
+	t.Cleanup(func() {
+		workspace.ExecCommandInWorkspace = previous
+		copyFileFromWorkspace = previousCopy
+	})
+
+	return &commands
+}
+
+// artifactServer поднимает бэкенд артефактов с заданным статусом.
+func artifactServer(t *testing.T, status int) *httptest.Server {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if status != http.StatusOK {
+			w.WriteHeader(status)
+			return
+		}
+		_, _ = io.WriteString(w, `{"status":"success","data":{"fileId":"f-1","name":"plan.md","size":5,"contentType":"text/markdown"}}`)
+	}))
+	t.Cleanup(server.Close)
+
+	return server
+}
+
+func workspaceActivities(root, backendURL string, executor *fakeExecutor) *Activities {
+	return &Activities{
+		WorkDir:    root,
+		OpenCode:   executor,
+		BackendURL: backendURL,
+		RunnerID:   "runner-1",
+		Secret:     "secret",
+	}
+}
+
+func TestActivityWorkspaceTurnCollectsAndCleansArtifacts(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "workspaces", "ws-1"), 0755); err != nil {
+		t.Fatalf("cannot create workspace dir: %v", err)
+	}
+
+	withArtifactWorkflow(t, "wf-artifacts-1")
+	commands := withWorkspaceExec(t, "plan.md\t5\n")
+	server := artifactServer(t, http.StatusOK)
+
+	executor := &fakeExecutor{answer: OpenCodeAnswer{Text: "Готово"}}
+	acts := workspaceActivities(root, server.URL, executor)
+
+	cmd := validCommand()
+	cmd.WorkspaceID = "ws-1"
+
+	result, err := acts.VipolnitHodOpenCodeActivity(context.Background(), cmd)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Kind != KindAnswer || !result.Success {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if len(result.Attachments) != 1 || result.Attachments[0].FileID != "f-1" {
+		t.Fatalf("artifact was not attached: %+v", result.Attachments)
+	}
+	if executor.lastReq.ArtifactDir != workspaceContainerDir+"/"+artifactDirName+"/wf-artifacts-1" {
+		t.Fatalf("unexpected artifact dir: %q", executor.lastReq.ArtifactDir)
+	}
+
+	joined := strings.Join(*commands, "\n")
+	if !strings.Contains(joined, "mkdir -p") || !strings.Contains(joined, artifactDirName) {
+		t.Fatalf("outbox was not prepared:\n%s", joined)
+	}
+	if !strings.Contains(joined, "rm -rf") {
+		t.Fatalf("outbox was not cleaned:\n%s", joined)
+	}
+	if !strings.Contains(joined, "find ") {
+		t.Fatalf("outbox was not scanned:\n%s", joined)
+	}
+}
+
+func TestActivityUnitTurnNeverScansOutbox(t *testing.T) {
+	root := t.TempDir()
+	prepareUnitDirs(t, root, UnitRef{ProjectID: "project-1", UnitID: "unit-1"})
+
+	withArtifactWorkflow(t, "wf-unit-1")
+	commands := withWorkspaceExec(t, "plan.md\t5\n")
+	server := artifactServer(t, http.StatusOK)
+
+	executor := &fakeExecutor{answer: OpenCodeAnswer{Text: "Готово"}}
+	acts := workspaceActivities(root, server.URL, executor)
+
+	cmd := validCommand()
+	cmd.Units = []UnitRef{{ProjectID: "project-1", UnitID: "unit-1"}}
+
+	result, err := acts.VipolnitHodOpenCodeActivity(context.Background(), cmd)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Attachments) != 0 {
+		t.Fatalf("unit turn must not attach artifacts: %+v", result.Attachments)
+	}
+	if executor.lastReq.ArtifactDir != "" {
+		t.Fatalf("unit turn must not set artifact dir: %q", executor.lastReq.ArtifactDir)
+	}
+	if strings.Contains(strings.Join(*commands, "\n"), artifactDirName) {
+		t.Fatalf("unit turn must not touch the outbox:\n%s", strings.Join(*commands, "\n"))
+	}
+}
+
+func TestActivityArtifactUploadFailureIsNonFatal(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "workspaces", "ws-1"), 0755); err != nil {
+		t.Fatalf("cannot create workspace dir: %v", err)
+	}
+
+	withArtifactWorkflow(t, "wf-artifacts-2")
+	withWorkspaceExec(t, "plan.md\t5\n")
+	server := artifactServer(t, http.StatusInternalServerError)
+
+	executor := &fakeExecutor{answer: OpenCodeAnswer{Text: "Готово"}}
+	acts := workspaceActivities(root, server.URL, executor)
+
+	cmd := validCommand()
+	cmd.WorkspaceID = "ws-1"
+
+	result, err := acts.VipolnitHodOpenCodeActivity(context.Background(), cmd)
+	if err != nil {
+		t.Fatalf("artifact failure must not return an activity error: %v", err)
+	}
+	if result.Kind != KindAnswer || !result.Success {
+		t.Fatalf("artifact failure must keep the turn successful: %+v", result)
+	}
+	if result.Attachments == nil || len(result.Attachments) != 0 {
+		t.Fatalf("failed upload must yield empty attachments: %#v", result.Attachments)
+	}
+}
+
+func TestHodResultSerializationNeverHasNullAttachments(t *testing.T) {
+	data, err := json.Marshal(HodResult{Success: true, Kind: KindAnswer})
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	if !strings.Contains(string(data), `"Attachments":[]`) {
+		t.Fatalf("Attachments must be []: %s", data)
 	}
 }

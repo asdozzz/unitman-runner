@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -56,6 +58,11 @@ const (
 	workspaceHealthInterval  = time.Second
 
 	workspaceCodeWorkspaceName = "workspace.code-workspace"
+
+	// workspaceFilesDirName — зарезервированный каталог вложений workspace.
+	// Каталоги проектов называются по ProjectId, поэтому коллизия невозможна,
+	// но имя дополнительно проверяется.
+	workspaceFilesDirName = "unitman_files"
 )
 
 // parseConfig — точка подмены для тестов. По умолчанию читает config.json,
@@ -84,6 +91,13 @@ type Project struct {
 type ProjectRef struct {
 	ProjectId   string
 	ProjectName string
+}
+
+// WorkspaceFile — файл вложения workspace из контракта.
+type WorkspaceFile struct {
+	FileId string
+	Name   string
+	Url    string
 }
 
 // ResultatZapuskaWorkspace — результат запуска workspace (раздел 6.4).
@@ -132,6 +146,7 @@ type ZapustitWorkspaceCommand struct {
 	ReadOnly      bool
 	MemoryLimit   int
 	Projects      []Project
+	Files         []WorkspaceFile
 }
 
 // WorkspaceRef — вход Ostanovit/Udalit.
@@ -230,12 +245,27 @@ func workspaceCommand(command string, workDir string, env []string) []string {
 	return append(args, workspaceComposeService, "sh", "-c", command)
 }
 
-// execWorkspace выполняет команду внутри контейнера workspace.
-func execWorkspace(ctx context.Context, dir, command, workDir string, env []string) (string, error) {
+// execWorkspace выполняет команду внутри контейнера workspace. Переменная,
+// чтобы активности можно было покрыть тестами без реального docker compose.
+var execWorkspace = func(ctx context.Context, dir, command, workDir string, env []string) (string, error) {
 	if strings.TrimSpace(command) == "" {
 		return "", errors.New("команда для workspace пуста")
 	}
 	return utils.ExecCommandContext(ctx, dir, workspaceCommand(command, workDir, env))
+}
+
+// ExecCommandInWorkspace выполняет shell-команду в контейнере workspace.
+// Экспортированный шов для соседних активностей (артефакты хода OpenCode).
+// Сигнатура и семантика совпадают с внутренним execWorkspace.
+var ExecCommandInWorkspace = func(ctx context.Context, dir, command, workDir string, env []string) (string, error) {
+	return execWorkspace(ctx, dir, command, workDir, env)
+}
+
+// copyFileToWorkspace копирует файл с хоста в запущенный контейнер workspace.
+// Переменная, чтобы активности можно было покрыть тестами без docker compose.
+var copyFileToWorkspace = func(ctx context.Context, dir, source, target string) (string, error) {
+	args := []string{"docker", "compose", "cp", source, workspaceComposeService + ":" + target}
+	return utils.ExecCommandContext(ctx, dir, args)
 }
 
 // stepTracker накапливает шаги и публикует их через существующий saveSteps
@@ -551,10 +581,165 @@ type codeWorkspace struct {
 	Folders []codeWorkspaceFolder `json:"folders"`
 }
 
+// applyWorkspaceFiles копирует вложения в /workspace/unitman_files и делает
+// их read-only. Файлы скачиваются на хост и копируются в запущенный контейнер.
+func applyWorkspaceFiles(
+	ctx context.Context,
+	workspaceDir string,
+	files []WorkspaceFile,
+	tracker *stepTracker,
+) error {
+	if len(files) == 0 {
+		return nil
+	}
+
+	started := time.Now()
+	command := "mkdir -p " + shellQuote(workspaceContainerDir+"/"+workspaceFilesDirName) +
+		" && chmod 0755 " + shellQuote(workspaceContainerDir+"/"+workspaceFilesDirName)
+	msg, err := execWorkspace(ctx, workspaceDir, command, workspaceContainerDir, nil)
+	tracker.add("prepare "+workspaceFilesDirName, strings.TrimSpace(msg), err, started)
+	if err != nil {
+		return fmt.Errorf("не удалось подготовить каталог %s: %w", workspaceFilesDirName, err)
+	}
+
+	for _, file := range files {
+		started = time.Now()
+		if !validWorkspaceFileName(file.Name) {
+			errFile := fmt.Errorf("некорректное имя файла workspace %q", file.Name)
+			tracker.add("validate file "+file.Name, "", errFile, started)
+			return errFile
+		}
+
+		tempPath, downloadErr := downloadWorkspaceFile(ctx, file.Url)
+		if downloadErr != nil {
+			tracker.add("download file "+file.Name, "", downloadErr, started)
+			return downloadErr
+		}
+
+		target := workspaceContainerDir + "/" + workspaceFilesDirName + "/" + file.Name
+		msg, copyErr := copyFileToWorkspace(ctx, workspaceDir, tempPath, target)
+		_ = os.Remove(tempPath)
+		tracker.add("copy file "+file.Name, strings.TrimSpace(msg), copyErr, started)
+		if copyErr != nil {
+			return fmt.Errorf("не удалось скопировать файл %s: %w", file.Name, copyErr)
+		}
+
+		started = time.Now()
+		msg, err = execWorkspace(ctx, workspaceDir, "chmod 0444 "+shellQuote(target), workspaceContainerDir, nil)
+		tracker.add("chmod file "+file.Name, strings.TrimSpace(msg), err, started)
+		if err != nil {
+			return fmt.Errorf("не удалось сделать файл %s read-only: %w", file.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// removeWorkspaceFiles удаляет файлы из /workspace/unitman_files.
+func removeWorkspaceFiles(
+	ctx context.Context,
+	workspaceDir string,
+	names []string,
+	tracker *stepTracker,
+) error {
+	for _, name := range names {
+		started := time.Now()
+		if !validWorkspaceFileName(name) {
+			errFile := fmt.Errorf("некорректное имя файла workspace %q", name)
+			tracker.add("validate file "+name, "", errFile, started)
+			return errFile
+		}
+
+		target := workspaceContainerDir + "/" + workspaceFilesDirName + "/" + name
+		msg, err := execWorkspace(ctx, workspaceDir, "rm -f "+shellQuote(target), workspaceContainerDir, nil)
+		tracker.add("remove file "+name, strings.TrimSpace(msg), err, started)
+		if err != nil {
+			return fmt.Errorf("не удалось удалить файл %s: %w", name, err)
+		}
+	}
+
+	return nil
+}
+
+func validWorkspaceFileName(name string) bool {
+	name = strings.TrimSpace(name)
+
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+
+	if strings.ContainsAny(name, "/\\\r\n\x00") {
+		return false
+	}
+
+	if filepath.Base(name) != name || strings.HasPrefix(name, ".") {
+		return false
+	}
+
+	return name != workspaceCodeWorkspaceName && name != workspaceFilesDirName
+}
+
+// downloadWorkspaceFile скачивает файл на хост. Переменная для подмены в тестах.
+var downloadWorkspaceFile = func(ctx context.Context, rawUrl string) (string, error) {
+	rawUrl = strings.TrimSpace(rawUrl)
+	if rawUrl == "" {
+		return "", errors.New("ссылка на файл workspace пуста")
+	}
+
+	if strings.HasPrefix(rawUrl, "/") {
+		configuration, err := parseConfig()
+		if err == nil {
+			rawUrl = strings.TrimRight(configuration.ApiHost, "/") + rawUrl
+		}
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawUrl, nil)
+	if err != nil {
+		return "", fmt.Errorf("не удалось создать запрос файла workspace: %w", err)
+	}
+
+	client := http.Client{Timeout: 10 * time.Minute}
+	response, err := client.Do(request)
+	if err != nil {
+		return "", fmt.Errorf("не удалось скачать файл workspace: %w", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("не удалось скачать файл workspace: %s", response.Status)
+	}
+
+	tempFile, err := os.CreateTemp("", "unitman_workspace_file_*")
+	if err != nil {
+		return "", err
+	}
+
+	tempPath := tempFile.Name()
+
+	_, copyErr := io.Copy(tempFile, response.Body)
+	closeErr := tempFile.Close()
+	if copyErr != nil {
+		_ = os.Remove(tempPath)
+		return "", fmt.Errorf("не удалось сохранить файл workspace: %w", copyErr)
+	}
+	if closeErr != nil {
+		_ = os.Remove(tempPath)
+		return "", closeErr
+	}
+
+	return tempPath, nil
+}
+
 // generateCodeWorkspace создаёт /workspace/workspace.code-workspace с папками
-// проектов.
-func generateCodeWorkspace(ctx context.Context, workspaceDir string, projects []Project, tracker *stepTracker) error {
-	folders := make([]codeWorkspaceFolder, 0, len(projects))
+// проектов и зарезервированным каталогом вложений.
+func generateCodeWorkspace(
+	ctx context.Context,
+	workspaceDir string,
+	projects []Project,
+	includeFiles bool,
+	tracker *stepTracker,
+) error {
+	folders := make([]codeWorkspaceFolder, 0, len(projects)+1)
 	for _, project := range projects {
 		dir := projectDirName(project.ProjectId)
 		if dir == "" {
@@ -569,6 +754,13 @@ func generateCodeWorkspace(ctx context.Context, workspaceDir string, projects []
 		folders = append(folders, codeWorkspaceFolder{
 			Path: workspaceContainerDir + "/" + dir,
 			Name: name,
+		})
+	}
+
+	if includeFiles {
+		folders = append(folders, codeWorkspaceFolder{
+			Path: workspaceContainerDir + "/" + workspaceFilesDirName,
+			Name: workspaceFilesDirName,
 		})
 	}
 

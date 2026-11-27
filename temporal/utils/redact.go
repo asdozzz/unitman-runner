@@ -36,6 +36,7 @@ var sensitiveKeyMarkers = []string{
 	"secret",
 	"authorization",
 	"credential",
+	"cipher",
 }
 
 // RedactString применяет все текстовые правила редактирования к строке.

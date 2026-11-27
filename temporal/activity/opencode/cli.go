@@ -164,6 +164,11 @@ func shellQuote(value string) string {
 // хранит историю, поэтому отправляем только текущую реплику.
 func cliPrompt(req OpenCodeRequest, continueSession bool) string {
 	prompt := cliPromptBase(req, continueSession)
+	// Инструкция про артефакты — только у workspace-хода, где задан
+	// каталог-исходящий ящик. HTTPExecutor это поле не читает.
+	if strings.TrimSpace(req.ArtifactDir) != "" {
+		prompt += "\n\n" + cliArtifactInstruction(req.ArtifactDir)
+	}
 	switch {
 	case req.DenyEdits:
 		// Read-only ход по юниту: правки файлов запрещены и на уровне
@@ -228,6 +233,18 @@ const cliReadOnlyInstruction = `Работа идёт в режиме read-only:
 // cliGitWriteInstruction — для read-only workspace: правки в рабочей копии
 // разрешены, запись в git запрещена.
 const cliGitWriteInstruction = `Работа идёт в режиме read-only: запрещено выполнять git commit и git push. Можно менять файлы в рабочей копии, но нельзя создавать коммиты и отправлять их в удалённый репозиторий.`
+
+// cliArtifactInstructionTemplate — инструкция агенту складывать итоговые
+// документы в каталог-исходящий ящик. %s — контейнерный путь каталога.
+const cliArtifactInstructionTemplate = `Если пользователь просит подготовить план, отчёт, спецификацию или другой документ,
+сохрани итоговый файл в %s/<краткое-имя>.md.
+Файлы из этого каталога автоматически прикрепляются к твоему ответу.
+Если пользователь указал конкретный путь, сохрани файл туда и продублируй его в этот каталог.
+Не помещай в каталог секреты, ключи, бинарные файлы и больше 5 файлов.`
+
+func cliArtifactInstruction(dir string) string {
+	return fmt.Sprintf(cliArtifactInstructionTemplate, dir)
+}
 
 type cliConfig struct {
 	Provider   map[string]cliProvider `json:"provider"`

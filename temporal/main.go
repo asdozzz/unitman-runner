@@ -96,6 +96,7 @@ func Init(config config.Configuration) {
 
 	// Workspace-стенды: отдельные контейнеры и тома, та же очередь.
 	w.RegisterActivity(workspaceActivity.ZapustitWorkspaceActivity)
+	w.RegisterActivity(workspaceActivity.ObnovitWorkspaceActivity)
 	w.RegisterActivity(workspaceActivity.OstanovitWorkspaceActivity)
 	w.RegisterActivity(workspaceActivity.UdalitWorkspaceActivity)
 	w.RegisterActivity(workspaceActivity.ProveritIzmeneniyaWorkspaceActivity)

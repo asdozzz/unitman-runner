@@ -139,6 +139,13 @@ func ZapustitWorkspaceActivity(
 		return result, nil
 	}
 
+	if filesErr := applyWorkspaceFiles(ctx, workspaceDir, command.Files, tracker); filesErr != nil {
+		result.Success = 0
+		tracker.publish(true)
+		result.Steps = []model.Step{}
+		return result, nil
+	}
+
 	tracker.publish(false)
 
 	allProjectsOK := true
@@ -181,7 +188,7 @@ func ZapustitWorkspaceActivity(
 		tracker.publish(false)
 	}
 
-	if genErr := generateCodeWorkspace(ctx, workspaceDir, command.Projects, tracker); genErr != nil {
+	if genErr := generateCodeWorkspace(ctx, workspaceDir, command.Projects, true, tracker); genErr != nil {
 		result.Success = 0
 		tracker.publish(true)
 		result.Steps = []model.Step{}

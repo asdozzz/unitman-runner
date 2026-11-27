@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -211,3 +212,235 @@ func TestRedactURLHidesCredentials(t *testing.T) {
 
 // Guard входных payload'ов активностей объединён в единый table-driven тест
 // TestActivityInputsJSONHasNoCredentials (temporal/utils/payload_guard_test.go).
+
+// withExecWorkspace подменяет исполнение команд workspace и восстанавливает
+// исходную реализацию после теста. Возвращает срез полученных команд.
+func withExecWorkspace(t *testing.T) *[]string {
+	t.Helper()
+
+	commands := make([]string, 0, 8)
+	previous := execWorkspace
+	execWorkspace = func(_ context.Context, _, command, _ string, _ []string) (string, error) {
+		commands = append(commands, command)
+		return "", nil
+	}
+
+	previousCopy := copyFileToWorkspace
+	copyFileToWorkspace = func(_ context.Context, _, _, target string) (string, error) {
+		commands = append(commands, "cp -> "+target)
+		return "", nil
+	}
+
+	t.Cleanup(func() {
+		execWorkspace = previous
+		copyFileToWorkspace = previousCopy
+	})
+
+	return &commands
+}
+
+// withDownloadWorkspaceFile подменяет скачивание файла на выдачу temp-файла
+// с заданным содержимым. Возвращает счётчик вызовов.
+func withDownloadWorkspaceFile(t *testing.T, content string) *int {
+	t.Helper()
+
+	calls := 0
+	previous := downloadWorkspaceFile
+	downloadWorkspaceFile = func(_ context.Context, _ string) (string, error) {
+		calls++
+		file, err := os.CreateTemp(t.TempDir(), "workspace_file_*")
+		if err != nil {
+			return "", err
+		}
+		if _, err := file.WriteString(content); err != nil {
+			_ = file.Close()
+			return "", err
+		}
+		if err := file.Close(); err != nil {
+			return "", err
+		}
+		return file.Name(), nil
+	}
+	t.Cleanup(func() { downloadWorkspaceFile = previous })
+
+	return &calls
+}
+
+func TestValidWorkspaceFileNameRejectsUnsafeNames(t *testing.T) {
+	rejected := []string{
+		"",
+		"   ",
+		".",
+		"..",
+		"../secret.txt",
+		"dir/file.txt",
+		`dir\file.txt`,
+		".hidden",
+		"with\nnewline",
+		"with\x00nul",
+		workspaceCodeWorkspaceName,
+		workspaceFilesDirName,
+	}
+	for _, name := range rejected {
+		if validWorkspaceFileName(name) {
+			t.Fatalf("expected %q to be rejected", name)
+		}
+	}
+
+	for _, name := range []string{"notes.txt", "image.png", "a-b_c.md"} {
+		if !validWorkspaceFileName(name) {
+			t.Fatalf("expected %q to be accepted", name)
+		}
+	}
+}
+
+func TestApplyWorkspaceFilesCopiesAndMarksReadOnly(t *testing.T) {
+	commands := withExecWorkspace(t)
+	downloads := withDownloadWorkspaceFile(t, "hello")
+	tracker := newStepTracker("wf-1")
+
+	err := applyWorkspaceFiles(
+		context.Background(),
+		t.TempDir(),
+		[]WorkspaceFile{{FileId: "file-1", Name: "notes.txt", Url: "https://example.com/file"}},
+		tracker,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if *downloads != 1 {
+		t.Fatalf("expected one download, got %d", *downloads)
+	}
+
+	joined := strings.Join(*commands, "\n")
+	if !strings.Contains(joined, "mkdir -p") || !strings.Contains(joined, workspaceFilesDirName) {
+		t.Fatalf("files directory was not prepared:\n%s", joined)
+	}
+	if !strings.Contains(joined, "chmod 0444") || !strings.Contains(joined, "/unitman_files/notes.txt") {
+		t.Fatalf("file was not made read-only:\n%s", joined)
+	}
+}
+
+func TestApplyWorkspaceFilesRejectsInvalidNameBeforeDownload(t *testing.T) {
+	withExecWorkspace(t)
+	downloads := withDownloadWorkspaceFile(t, "malicious")
+	tracker := newStepTracker("wf-1")
+
+	err := applyWorkspaceFiles(
+		context.Background(),
+		t.TempDir(),
+		[]WorkspaceFile{{FileId: "file-1", Name: "../escape.txt", Url: "https://example.com/file"}},
+		tracker,
+	)
+	if err == nil {
+		t.Fatal("expected error for invalid file name")
+	}
+	if *downloads != 0 {
+		t.Fatalf("invalid name must be rejected before download, got %d downloads", *downloads)
+	}
+}
+
+func TestRemoveWorkspaceFilesRunsRmAndRejectsTraversal(t *testing.T) {
+	commands := withExecWorkspace(t)
+	tracker := newStepTracker("wf-1")
+
+	if err := removeWorkspaceFiles(context.Background(), t.TempDir(), []string{"old.txt"}, tracker); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if joined := strings.Join(*commands, "\n"); !strings.Contains(joined, "rm -f") || !strings.Contains(joined, "/unitman_files/old.txt") {
+		t.Fatalf("rm command was not issued:\n%s", joined)
+	}
+
+	if err := removeWorkspaceFiles(context.Background(), t.TempDir(), []string{"../outside.txt"}, tracker); err == nil {
+		t.Fatal("expected traversal name to be rejected")
+	}
+}
+
+func TestGenerateCodeWorkspaceIncludesFilesFolder(t *testing.T) {
+	projects := []Project{{ProjectId: "project-1", ProjectName: "api"}}
+
+	for _, includeFiles := range []bool{true, false} {
+		commands := withExecWorkspace(t)
+		tracker := newStepTracker("wf-1")
+
+		if err := generateCodeWorkspace(context.Background(), t.TempDir(), projects, includeFiles, tracker); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		joined := strings.Join(*commands, "\n")
+		if !strings.Contains(joined, "workspace.code-workspace") {
+			t.Fatalf("code-workspace command is missing:\n%s", joined)
+		}
+		if !strings.Contains(joined, "/workspace/project-1") {
+			t.Fatalf("project folder is missing:\n%s", joined)
+		}
+
+		hasFiles := strings.Contains(joined, workspaceFilesDirName)
+		if hasFiles != includeFiles {
+			t.Fatalf("includeFiles=%v but files folder presence=%v:\n%s", includeFiles, hasFiles, joined)
+		}
+	}
+}
+
+func TestExecCommandInWorkspaceDelegatesToExecWorkspace(t *testing.T) {
+	type captured struct {
+		dir     string
+		command string
+		workDir string
+		env     []string
+	}
+	var got captured
+
+	previous := execWorkspace
+	execWorkspace = func(_ context.Context, dir, command, workDir string, env []string) (string, error) {
+		got = captured{dir: dir, command: command, workDir: workDir, env: env}
+		return "ok", nil
+	}
+	t.Cleanup(func() { execWorkspace = previous })
+
+	output, err := ExecCommandInWorkspace(context.Background(), "/host/ws", "echo hi", "/workspace", []string{"A=1"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if output != "ok" {
+		t.Fatalf("unexpected output: %q", output)
+	}
+	if got.dir != "/host/ws" || got.command != "echo hi" || got.workDir != "/workspace" {
+		t.Fatalf("unexpected delegation args: %+v", got)
+	}
+	if len(got.env) != 1 || got.env[0] != "A=1" {
+		t.Fatalf("unexpected env: %+v", got.env)
+	}
+}
+
+func TestObnovitWorkspaceActivityRejectsInvalidID(t *testing.T) {
+	result, err := ObnovitWorkspaceActivity(context.Background(), ObnovitWorkspaceCommand{
+		WorkspaceId: "../escape",
+	})
+	if err != nil {
+		t.Fatalf("activity must not return transport error: %v", err)
+	}
+	if result.Success != 0 {
+		t.Fatalf("invalid workspace id must fail, got success=%d", result.Success)
+	}
+	if result.Files == nil || result.Projects == nil {
+		t.Fatalf("result slices must be initialized: %+v", result)
+	}
+}
+
+func TestObnovitWorkspaceActivityFailsWhenDirectoryMissing(t *testing.T) {
+	result, err := ObnovitWorkspaceActivity(context.Background(), ObnovitWorkspaceCommand{
+		WorkspaceId: "workspace-does-not-exist-987654321",
+		NewProjects: []Project{{ProjectId: "project-1", ProjectName: "api"}},
+	})
+	if err != nil {
+		t.Fatalf("activity must not return transport error: %v", err)
+	}
+	if result.Success != 0 {
+		t.Fatalf("missing workspace directory must fail, got success=%d", result.Success)
+	}
+	if len(result.Projects) != 0 {
+		t.Fatalf("no project may be processed when directory is missing: %+v", result.Projects)
+	}
+}

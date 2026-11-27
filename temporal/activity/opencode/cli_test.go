@@ -457,3 +457,61 @@ func strconvQuote(value string) string {
 	raw, _ := json.Marshal(value)
 	return string(raw)
 }
+
+func TestCLIPromptArtifactInstructionOnlyWhenDirSet(t *testing.T) {
+	base := OpenCodeRequest{
+		URL:      "https://example.test/v1",
+		Model:    "gpt-5-codex",
+		APIKey:   "sk-secret",
+		Messages: []Replika{{Role: "user", Text: "сделай план"}},
+	}
+
+	without := cliPrompt(base, false)
+	if strings.Contains(without, cliArtifactInstruction("/workspace/out")) {
+		t.Fatalf("artifact instruction must be absent without ArtifactDir: %q", without)
+	}
+
+	withDir := base
+	withDir.ArtifactDir = "/workspace/out"
+	prompt := cliPrompt(withDir, false)
+	if !strings.Contains(prompt, "/workspace/out") {
+		t.Fatalf("artifact directory is missing from prompt: %q", prompt)
+	}
+	if !strings.Contains(prompt, "автоматически прикрепляются") {
+		t.Fatalf("artifact instruction is missing: %q", prompt)
+	}
+}
+
+func TestCLIPromptArtifactComposesWithReadOnlyInstructions(t *testing.T) {
+	unit := OpenCodeRequest{
+		URL:         "https://example.test/v1",
+		Model:       "gpt-5-codex",
+		APIKey:      "sk-secret",
+		ReadOnly:    true,
+		DenyEdits:   true,
+		ArtifactDir: "/workspace/out",
+		Messages:    []Replika{{Role: "user", Text: "проверь тесты"}},
+	}
+
+	prompt := cliPrompt(unit, false)
+	for _, want := range []string{"/workspace/out", cliReadOnlyInstruction, cliQuestionInstruction} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt is missing %q: %q", want, prompt)
+		}
+	}
+
+	// Инструкция артефактов идёт до read-only/ git-инструкции.
+	if strings.Index(prompt, "/workspace/out") > strings.Index(prompt, cliReadOnlyInstruction) {
+		t.Fatalf("artifact instruction must precede the read-only instruction: %q", prompt)
+	}
+
+	workspace := unit
+	workspace.DenyEdits = false
+	prompt = cliPrompt(workspace, false)
+	if !strings.Contains(prompt, cliGitWriteInstruction) {
+		t.Fatalf("git write instruction is missing: %q", prompt)
+	}
+	if !strings.Contains(prompt, "/workspace/out") {
+		t.Fatalf("artifact instruction is missing for workspace: %q", prompt)
+	}
+}

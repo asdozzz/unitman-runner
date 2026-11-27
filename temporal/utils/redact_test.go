@@ -278,6 +278,29 @@ func TestActivityCommandLoggingDoesNotLeakCredentials(t *testing.T) {
 	}
 }
 
+func TestRedactsHiddenUnitVariableCipher(t *testing.T) {
+	type variable struct {
+		Id          string
+		Value       string
+		ValueCipher string
+		Hidden      bool
+	}
+
+	redacted := RedactValue(variable{
+		Id:          "PV_FOO",
+		ValueCipher: "TESTCIPHEREXAMPLEVALUE",
+		Hidden:      true,
+	})
+
+	fields, ok := redacted.(map[string]any)
+	if !ok {
+		t.Fatalf("RedactValue() = %T, want map", redacted)
+	}
+	if fields["ValueCipher"] != RedactedValue {
+		t.Fatalf("ValueCipher = %v, want %q", fields["ValueCipher"], RedactedValue)
+	}
+}
+
 func assertNoSyntheticSecrets(t *testing.T, value string) {
 	t.Helper()
 	for _, secret := range []string{

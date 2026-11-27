@@ -6,6 +6,7 @@ import (
 	"os"
 	"runner/state"
 	"runner/temporal/activity/unit/model"
+	"runner/temporal/unitvariables"
 	"strings"
 	"time"
 
@@ -72,10 +73,17 @@ func NachatDeistvieUnitaActivity(ctx context.Context, command NachatZapuskUnita)
 
 	filepath = currentPath + "/" + filepath
 
+	variables, resolveErr := unitvariables.ResolveFromConfig(command.Variables, command.Id)
+	if resolveErr != nil {
+		result.Steps = model.AddStepToSteps(result.Steps, "resolve hidden variables", "", resolveErr, time.Now().Unix())
+		result.Success = 0
+		return wrapResultatDeistvie(result), nil
+	}
+
 	for _, commandString := range command.Commands {
 		unixtimeStart := time.Now().Unix()
 		commandStringAfteReplace := commandString
-		for _, variableItem := range command.Variables {
+		for _, variableItem := range variables {
 			commandStringAfteReplace = strings.Replace(commandStringAfteReplace, "${UNITMAN_ACTION_"+variableItem.Id+"}", variableItem.Value, 1)
 		}
 		args := UnitContainerCommand(commandStringAfteReplace)

@@ -153,6 +153,126 @@ Read-only включается, если `ReadOnly=true` у workspace или `Ca
 opencode run --format json --auto --model unitman/main --dir /workspace ...
 ```
 
+## Файлы workspace
+
+Вложения лежат в зарезервированном каталоге `/workspace/unitman_files`, рядом
+с каталогами проектов (проекты называются по `ProjectId`, поэтому коллизия
+невозможна). Каталог добавляется в `workspace.code-workspace` отдельной
+папкой, если в workspace есть файлы.
+
+- `ZapustitWorkspaceActivity` принимает `Files[]` (`FileId`, `Name`, `Url`),
+  скачивает каждый файл на хост, копирует в контейнер через
+  `docker compose cp` и выставляет `chmod 0444`;
+- имя проверяется `validWorkspaceFileName`: запрещены `/`, `\`, переводы
+  строк, NUL, `.`/`..`, имена с ведущей точкой и резервные
+  `workspace.code-workspace` / `unitman_files`;
+- `ObnovitWorkspaceActivity` клонирует только новые проекты, перегенерирует
+  `workspace.code-workspace`, применяет `Files[]` и удаляет
+  `FilesToDelete[]` (имена файлов), не пересоздавая контейнер.
+
+`/workspace/unitman_files` — **только входные данные**, смонтированные
+read-only. Как outbox он не используется: агент не должен менять входные файлы,
+а раннер не сканирует этот каталог.
+
+## Артефакты хода (outbox)
+
+Готовые документы агента (`план`, отчёт, спецификация) забираются из отдельного
+каталога-исходящего ящика. Механика — [`artifacts.go`](../temporal/activity/opencode/artifacts.go:1).
+
+### Жизненный цикл
+
+1. Перед `opencode run` для workspace-хода (`HodCommand.WorkspaceID` задан)
+   раннер выполняет `rm -rf`, `mkdir -p` и `chmod 0775` для
+   `/workspace/unitman_artifacts/<workflowId>/`;
+2. в промпт добавляется инструкция сохранять документы в этот каталог
+   ([`cliArtifactInstruction`](../temporal/activity/opencode/cli.go:237));
+   HTTP-исполнитель поле `ArtifactDir` не читает;
+3. после успешного ответа раннер собирает файлы каталога, загружает их на
+   бэкенд и удаляет каталог через `rm -rf` (best effort, ошибка только
+   логируется);
+4. ошибка подготовки каталога не валит ход: артефакты просто отключаются.
+
+Юнит-ходы и свободные сессии каталог не создают и `ArtifactDir` не получают.
+
+### Сбор файлов
+
+```sh
+find /workspace/unitman_artifacts/<workflowId> -maxdepth 1 -type f -printf '%f\t%s\n'
+```
+
+- учитываются только регулярные файлы на глубине 1; подкаталоги игнорируются;
+- отсутствие каталога — не ошибка;
+- файлы сортируются по имени, чтобы результат был детерминирован;
+- имя проверяется [`validArtifactName`](../temporal/activity/opencode/artifacts.go:80):
+  запрещены `/`, `\`, NUL, `\r`, `\n`, `.`, `..`, имена с ведущей точкой и
+  длиннее 128 символов; расширение берётся в нижнем регистре.
+
+### Лимиты
+
+Лимиты зеркалят бэкенд:
+
+| Лимит | Значение |
+|---|---|
+| файлов на ход | 5 |
+| размер файла | 2 МиБ (`maxArtifactBytes`) |
+| суммарный размер | 8 МиБ (`maxTotalArtifactBytes`) |
+| длина имени | 128 символов |
+
+Файлы сверх лимитов и файлы нулевого размера пропускаются.
+
+### Типы и содержимое
+
+Allowlist (расширение → MIME):
+
+```text
+md   text/markdown
+txt  text/plain
+json application/json
+yaml application/yaml
+yml  application/yaml
+csv  text/csv
+log  text/plain
+```
+
+Жёсткий denylist независимо от allowlist: `html`, `htm`, `xhtml`, `svg`, `js`,
+`mjs`, `ts`, `php`, `sh`, `py`, `exe`, `bin`, `so`, `dll`, `bat`, `cmd`, `ps1`,
+`sql`.
+
+Файл копируется на хост через `docker compose cp` и читается целиком. Затем
+повторно проверяются размер (`0 < size <= 2 МиБ`), отсутствие NUL-байтов и
+валидность UTF-8; при нарушении файл пропускается.
+
+### Загрузка
+
+```http
+POST <backend>/api/runner/opencode/artifact?workflowId=<id>&workspaceId=<id>&name=<name>&contentType=<mime>
+X-Runner-Id: <runner id>
+X-Runner-Signature: hex(HMAC-SHA256(secret, workflowId + "\n" + name + "\n" + body))
+Content-Type: application/octet-stream
+
+<сырые байты>
+```
+
+Имя и `contentType` кодируются в query, но подпись считается по исходному
+(декодированному) имени и сырому телу. Ответ бэкенда — `{status, data}`, где
+`data` содержит `FileId`, `Name`, `Size`, `ContentType`; эти метаданные
+попадают в `HodResult.Attachments`.
+
+Пустой `workflowId` или пустой `BackendURL` означают «загрузка отключена»:
+файл пропускается без ошибки.
+
+### Повторы и нефатальность
+
+- до 3 попыток на файл;
+- пауза между попытками — 300 мс;
+- таймаут одной попытки — 30 секунд;
+- повтор только при сетевой ошибке или ответе 5xx; 4xx не повторяются.
+
+Сбой сбора, копирования или загрузки не меняет `Success`/`Kind` хода и не
+возвращает ошибку активности: он пишется в лог и в шаг прогресса
+(`artifact <имя>`). Паника при сборе артефактов перехватывается. Исходящий ящик
+удаляется после попытки загрузки в любом случае.
+
 ## Очистка хостового Docker
 
 `monitor.RunCleanup` выполняет только `docker image prune -af` и

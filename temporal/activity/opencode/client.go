@@ -45,6 +45,10 @@ type OpenCodeRequest struct {
 	// при включённом редактировании (15.7-а). У read-only workspace
 	// правки в рабочей копии разрешены — запрещена запись в git.
 	DenyEdits bool
+	// ArtifactDir — контейнерный каталог-исходящий ящик, куда CLI-агент
+	// складывает итоговые документы хода. Заполняется только у workspace-хода;
+	// HTTPExecutor поле не читает.
+	ArtifactDir string
 }
 
 // OpenCodeAnswer — нормализованный ответ OpenCode.

@@ -20,6 +20,7 @@ import (
 
 	"runner/config"
 	unitActivity "runner/temporal/activity/unit"
+	"runner/temporal/activity/workspace"
 
 	"go.temporal.io/sdk/activity"
 )
@@ -169,14 +170,21 @@ type HodResult struct {
 	ErrorKey          *string  `json:"ErrorKey"`
 	ErrorMessage      *string  `json:"ErrorMessage"`
 	ExternalSessionID *string  `json:"ExternalSessionId"`
+	// Attachments — метаданные артефактов хода. Содержимого файлов здесь
+	// нет никогда.
+	Attachments []Artifact `json:"Attachments"`
 }
 
-// MarshalJSON гарантирует, что Questions уходит в бэкенд массивом, а не null,
-// даже если результат собран не через конструктор errorResult.
+// MarshalJSON гарантирует, что Questions и Attachments уходят в бэкенд
+// массивами, а не null, даже если результат собран не через конструктор
+// errorResult.
 func (r HodResult) MarshalJSON() ([]byte, error) {
 	type plain HodResult
 	if r.Questions == nil {
 		r.Questions = []Vopros{}
+	}
+	if r.Attachments == nil {
+		r.Attachments = []Artifact{}
 	}
 	return json.Marshal(plain(r))
 }
@@ -275,6 +283,27 @@ func (a *Activities) VipolnitHodOpenCodeActivity(ctx context.Context, cmd HodCom
 	}
 	defer cleanupGitSession()
 
+	// Каталог-исходящий ящик артефактов готовится только у workspace-хода:
+	// юнит-ходы и свободные сессии артефактов не отдают. Ошибка подготовки
+	// безопасно отключает артефакты, но не мешает ходу.
+	artifactDir := ""
+	if strings.TrimSpace(cmd.WorkspaceID) != "" {
+		if wfID := strings.TrimSpace(workflowIDFunc(ctx)); validPathSegment(wfID) {
+			dir := workspaceContainerDir + "/" + artifactDirName + "/" + wfID
+			command := "rm -rf " + shellQuote(dir) +
+				" && mkdir -p " + shellQuote(dir) +
+				" && chmod 0775 " + shellQuote(dir)
+			started := time.Now()
+			_, prepErr := workspace.ExecCommandInWorkspace(ctx, workDir, command, workspaceContainerDir, nil)
+			p.addStep(ctx, "prepare "+artifactDirName, prepErrText(prepErr), prepErr == nil, started)
+			if prepErr != nil {
+				log.Printf("opencode: cannot prepare artifact dir: %s", prepErr)
+			} else {
+				artifactDir = dir
+			}
+		}
+	}
+
 	runCtx, cancel := context.WithTimeout(ctx, turnBudget)
 	defer cancel()
 
@@ -292,7 +321,8 @@ func (a *Activities) VipolnitHodOpenCodeActivity(ctx context.Context, cmd HodCom
 		// Правки файлов запрещены только у read-only хода по юниту
 		// (15.7-а): у read-only workspace правки в рабочей копии
 		// разрешены, запрещена запись в git.
-		DenyEdits: isUnitSession && effectiveReadOnly,
+		DenyEdits:   isUnitSession && effectiveReadOnly,
+		ArtifactDir: artifactDir,
 	})
 
 	if execErr != nil {
@@ -333,9 +363,27 @@ func (a *Activities) VipolnitHodOpenCodeActivity(ctx context.Context, cmd HodCom
 
 	result = prevratitRezultat(answer)
 	sanitizeResult(&result, cmd.ApiKey)
+
+	// Артефакты обогащают только успешный ход. Сбой сбора/загрузки никогда
+	// не меняет Kind/Success и не возвращает ошибку активности.
+	if artifactDir != "" && result.Kind != KindError {
+		result.Attachments = a.sobratIOtpravitArtefakty(ctx, workDir, artifactDir, p, cmd)
+	}
+	if result.Attachments == nil {
+		result.Attachments = []Artifact{}
+	}
+
 	p.publish(ctx, true, result.Kind != KindError)
 
 	return result, nil
+}
+
+// prepErrText приводит ошибку подготовки каталога к тексту шага прогресса.
+func prepErrText(err error) string {
+	if err == nil {
+		return "ok"
+	}
+	return err.Error()
 }
 
 // workflowID безопасно достаёт id workflow, который является токеном прогресса.
@@ -349,6 +397,9 @@ func workflowID(ctx context.Context) (id string) {
 
 	return activity.GetInfo(ctx).WorkflowExecution.ID
 }
+
+// workflowIDFunc — точка подмены для тестов активности вне Temporal-контекста.
+var workflowIDFunc = workflowID
 
 func sobratSoobsheniya(cmd HodCommand) []Replika {
 	msgs := make([]Replika, 0, len(cmd.History)+1)
