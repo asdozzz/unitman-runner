@@ -139,6 +139,18 @@ func ObnovitWorkspaceActivity(
 		tracker.publish(false)
 	}
 
+	// Обновление набора проектов меняет эффективный набор навыков: перечитываем
+	// его и пробуем материализовать в работающем контейнере. Best-effort:
+	// контейнер может быть остановлен, тогда навыки обновятся на следующем ходе
+	// агента (CLI выполняет unit-skills-sync --if-changed перед каждым turn).
+	started = time.Now()
+	skillsOutcome, skillsErr := stageWorkspaceSkills(ctx, workspaceDir, command.AllProjects)
+	tracker.add("stage opencode skills", workspaceSkillsStepMessage(skillsOutcome, skillsErr), nil, started)
+
+	started = time.Now()
+	syncOutput, _ := runWorkspaceSkillsSync(ctx, workspaceDir)
+	tracker.add("unit-skills-sync --if-changed", syncOutput, nil, started)
+
 	if genErr := generateCodeWorkspace(ctx, workspaceDir, command.AllProjects, true, tracker); genErr != nil {
 		result.Success = 0
 		tracker.publish(true)

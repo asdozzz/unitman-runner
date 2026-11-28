@@ -30,6 +30,9 @@ services:
       - ../../mainBranch/.git:/seed/git:ro
       # Staging вложений, которые подготовил runner: <unit>/seed/volumes -> /seed/volumes.
       - ./seed/volumes:/seed/volumes:ro
+      # Staging OpenCode-навыков: entrypoint и ходы агента материализуют их
+      # в $HOME/.config/opencode через unit-skills-sync.
+      - ./seed/skills:/opt/unitman/skills:ro
 
   # Read-only IDE. Порт 47000 не публикуется на хост: сервис живёт
   # в network namespace контейнера unit и доступен через proxy по поддомену.

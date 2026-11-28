@@ -395,6 +395,9 @@ func TestCLIExecutorReturnsEventError(t *testing.T) {
 func TestCLIExecutorRecreatesLostSession(t *testing.T) {
 	var commands []string
 	executor := &CLIExecutor{ExecUnit: func(_ context.Context, _ string, command string, _ unit.UnitExecOptions) (string, error) {
+		if command == skillSyncCommand {
+			return "", nil
+		}
 		commands = append(commands, command)
 		if len(commands) == 1 {
 			return "", errors.New(`Session not found: sess_old`)
@@ -513,5 +516,231 @@ func TestCLIPromptArtifactComposesWithReadOnlyInstructions(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "/workspace/out") {
 		t.Fatalf("artifact instruction is missing for workspace: %q", prompt)
+	}
+}
+
+func TestCLIConfigJSONIncludesSkillsInstructions(t *testing.T) {
+	raw, err := cliConfigJSON(OpenCodeRequest{
+		URL:    "https://example.test/v1",
+		Model:  "gpt-5-codex",
+		APIKey: "sk-secret",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var config struct {
+		Provider map[string]struct {
+			NPM string `json:"npm"`
+		} `json:"provider"`
+		Instructions []string `json:"instructions"`
+	}
+	if err := json.Unmarshal([]byte(raw), &config); err != nil {
+		t.Fatalf("cannot decode config: %v", err)
+	}
+	if len(config.Instructions) != 1 || config.Instructions[0] != skillsIndexPath {
+		t.Fatalf("unexpected instructions: %#v", config.Instructions)
+	}
+	if _, ok := config.Provider["unitman"]; !ok {
+		t.Fatalf("provider was lost: %s", raw)
+	}
+}
+
+func TestCLIExecutorSyncsSkillsBeforeTurn(t *testing.T) {
+	var (
+		commands []string
+		opts     []unit.UnitExecOptions
+	)
+	executor := &CLIExecutor{ExecUnit: func(_ context.Context, _ string, command string, o unit.UnitExecOptions) (string, error) {
+		commands = append(commands, command)
+		opts = append(opts, o)
+		if command == skillSyncCommand {
+			return "", nil
+		}
+		return `{"type":"text","sessionID":"ses_1","part":{"id":"p1","type":"text","text":"Готово"}}`, nil
+	}}
+
+	_, err := executor.Execute(context.Background(), OpenCodeRequest{
+		URL:       "https://example.test/v1",
+		Model:     "gpt-5-codex",
+		APIKey:    "sk-secret",
+		WorkDir:   "/work/workspace",
+		Workspace: true,
+		Messages:  []Replika{{Role: "user", Text: "привет"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(commands) != 2 {
+		t.Fatalf("expected sync + run, got %#v", commands)
+	}
+	if commands[0] != skillSyncCommand {
+		t.Fatalf("first command must be skills sync, got %q", commands[0])
+	}
+	if !strings.Contains(commands[1], "opencode run") {
+		t.Fatalf("second command must be opencode run, got %q", commands[1])
+	}
+	if opts[0].Service != workspaceComposeService || opts[0].WorkDir != workspaceContainerDir {
+		t.Fatalf("sync must run in the workspace service/dir: %+v", opts[0])
+	}
+}
+
+func TestCLIExecutorSkillsSyncFailureDoesNotFailTurn(t *testing.T) {
+	var syncErr error
+	executor := &CLIExecutor{
+		ExecUnit: func(_ context.Context, _ string, command string, _ unit.UnitExecOptions) (string, error) {
+			if command == skillSyncCommand {
+				return "sync failed", errors.New("sync failed")
+			}
+			return `{"type":"text","sessionID":"ses_1","part":{"id":"p1","type":"text","text":"Готово"}}`, nil
+		},
+		OnSkillSync: func(err error) { syncErr = err },
+	}
+
+	answer, err := executor.Execute(context.Background(), OpenCodeRequest{
+		URL:      "https://example.test/v1",
+		Model:    "gpt-5-codex",
+		APIKey:   "sk-secret",
+		WorkDir:  "/work/unit",
+		Messages: []Replika{{Role: "user", Text: "привет"}},
+	})
+	if err != nil {
+		t.Fatalf("skill sync failure must not fail the turn: %v", err)
+	}
+	if answer.Text != "Готово" {
+		t.Fatalf("unexpected answer: %q", answer.Text)
+	}
+	if syncErr == nil {
+		t.Fatal("OnSkillSync must receive the sync error")
+	}
+}
+
+func TestCLICommandIncludesAgent(t *testing.T) {
+	req := OpenCodeRequest{
+		URL:         "https://example.test/v1",
+		Model:       "gpt-5-codex",
+		APIKey:      "sk-secret",
+		WorkDir:     "/work/unit",
+		AgentName:   "unitman-build",
+		AgentPrompt: "Ты — build-агент.",
+		Messages:    []Replika{{Role: "user", Text: "привет"}},
+	}
+
+	command := cliCommand(req, false)
+	if !strings.Contains(command, "--agent unitman-build") {
+		t.Fatalf("command must select the agent: %q", command)
+	}
+
+	legacy := cliCommand(OpenCodeRequest{
+		URL:      "https://example.test/v1",
+		Model:    "gpt-5-codex",
+		APIKey:   "sk-secret",
+		WorkDir:  "/work/unit",
+		Messages: []Replika{{Role: "user", Text: "привет"}},
+	}, false)
+	if strings.Contains(legacy, "--agent") {
+		t.Fatalf("legacy command must not pass --agent: %q", legacy)
+	}
+}
+
+func TestCLIConfigJSONAgentConfig(t *testing.T) {
+	raw, err := cliConfigJSON(OpenCodeRequest{
+		URL:         "https://example.test/v1",
+		Model:       "gpt-5-codex",
+		APIKey:      "sk-secret",
+		AgentName:   "unitman-build",
+		AgentPrompt: "Ты — build-агент.",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var config struct {
+		Agent map[string]struct {
+			Mode       string `json:"mode"`
+			Prompt     string `json:"prompt"`
+			Permission *struct {
+				Edit string `json:"edit"`
+			} `json:"permission"`
+		} `json:"agent"`
+	}
+	if err := json.Unmarshal([]byte(raw), &config); err != nil {
+		t.Fatalf("cannot decode config: %v", err)
+	}
+
+	agent, ok := config.Agent["unitman-build"]
+	if !ok {
+		t.Fatalf("agent config is missing: %s", raw)
+	}
+	if agent.Mode != "primary" {
+		t.Fatalf("unexpected agent mode: %q", agent.Mode)
+	}
+	if agent.Prompt != "Ты — build-агент." {
+		t.Fatalf("unexpected agent prompt: %q", agent.Prompt)
+	}
+	if agent.Permission != nil {
+		t.Fatalf("build agent must not deny edits: %+v", agent.Permission)
+	}
+}
+
+func TestCLIConfigJSONAgentDenyEdits(t *testing.T) {
+	req := OpenCodeRequest{
+		URL:            "https://example.test/v1",
+		Model:          "gpt-5-codex",
+		APIKey:         "sk-secret",
+		AgentName:      "unitman-plan",
+		AgentPrompt:    "Ты — plan-агент.",
+		AgentDenyEdits: true,
+		Messages:       []Replika{{Role: "user", Text: "привет"}},
+	}
+
+	raw, err := cliConfigJSON(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var config struct {
+		Agent map[string]struct {
+			Permission *struct {
+				Edit string            `json:"edit"`
+				Bash map[string]string `json:"bash"`
+			} `json:"permission"`
+		} `json:"agent"`
+		Permission *struct {
+			Edit string `json:"edit"`
+		} `json:"permission"`
+	}
+	if err := json.Unmarshal([]byte(raw), &config); err != nil {
+		t.Fatalf("cannot decode config: %v", err)
+	}
+
+	agent, ok := config.Agent["unitman-plan"]
+	if !ok || agent.Permission == nil {
+		t.Fatalf("plan agent must contain permission: %s", raw)
+	}
+	if agent.Permission.Edit != "deny" {
+		t.Fatalf("plan agent must deny edits: %+v", agent.Permission)
+	}
+	if agent.Permission.Bash["git push*"] != "deny" || agent.Permission.Bash["git commit*"] != "deny" {
+		t.Fatalf("plan agent must deny git writes: %+v", agent.Permission.Bash)
+	}
+	if config.Permission == nil || config.Permission.Edit != "deny" {
+		t.Fatalf("global permission must deny edits: %s", raw)
+	}
+
+	if !strings.Contains(cliPrompt(req, false), cliReadOnlyInstruction) {
+		t.Fatal("plan prompt must include the read-only instruction")
+	}
+}
+
+func TestCLIConfigJSONRejectsInvalidAgentName(t *testing.T) {
+	_, err := cliConfigJSON(OpenCodeRequest{
+		URL:       "https://example.test/v1",
+		Model:     "gpt-5-codex",
+		APIKey:    "sk-secret",
+		AgentName: "bad agent!",
+	})
+	if err == nil {
+		t.Fatal("invalid agent name must be rejected")
 	}
 }

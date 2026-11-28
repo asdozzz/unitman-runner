@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -12,8 +13,10 @@ func TestEmbeddedAssetsContainRequiredFiles(t *testing.T) {
 		"temporal/activity/unit/docker-dind/compose.ide-view.yaml",
 		"temporal/activity/unit/docker-dind/compose.ide-edit.yaml",
 		"temporal/activity/unit/docker-dind/entrypoint.sh",
+		"temporal/activity/unit/docker-dind/unit-skills-sync.sh",
 		"temporal/activity/workspace/docker-dind/compose.dind.yaml",
 		"temporal/activity/workspace/docker-dind/Dockerfile.temp",
+		"temporal/activity/workspace/docker-dind/unit-skills-sync.sh",
 		".docker/proxy/nginx.conf",
 	}
 
@@ -56,5 +59,43 @@ func TestExtractEmbeddedAssets(t *testing.T) {
 	proxy := filepath.Join(dir, ".docker/proxy/nginx.conf")
 	if _, err := os.Stat(proxy); err != nil {
 		t.Fatalf("proxy config was not extracted: %v", err)
+	}
+}
+
+func TestComposeFilesMountSkillsReadOnly(t *testing.T) {
+	cases := []string{
+		"temporal/activity/unit/docker-dind/compose.dind.yaml",
+		"temporal/activity/workspace/docker-dind/compose.dind.yaml",
+	}
+
+	for _, path := range cases {
+		t.Run(path, func(t *testing.T) {
+			raw, err := embeddedAssets.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read %s: %v", path, err)
+			}
+			if !strings.Contains(string(raw), "./seed/skills:/opt/unitman/skills:ro") {
+				t.Fatalf("%s must mount ./seed/skills read-only:\n%s", path, raw)
+			}
+		})
+	}
+}
+
+func TestEntrypointsRunSkillsSync(t *testing.T) {
+	cases := []string{
+		"temporal/activity/unit/docker-dind/entrypoint.sh",
+		"temporal/activity/workspace/docker-dind/entrypoint.sh",
+	}
+
+	for _, path := range cases {
+		t.Run(path, func(t *testing.T) {
+			raw, err := embeddedAssets.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read %s: %v", path, err)
+			}
+			if !strings.Contains(string(raw), "unit-skills-sync || true") {
+				t.Fatalf("%s must call unit-skills-sync best-effort:\n%s", path, raw)
+			}
+		})
 	}
 }

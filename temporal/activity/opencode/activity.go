@@ -104,6 +104,13 @@ type HodCommand struct {
 	ProjectID *string   `json:"ProjectId"`
 	UnitID    *string   `json:"UnitId"`
 
+	// AgentName/AgentPrompt — выбранный мод агента. Пустые значения
+	// означают legacy-ход без `--agent`. AgentDenyEdits запрещает правку
+	// файлов для plan-подобного мода.
+	AgentName      string `json:"AgentName"`
+	AgentPrompt    string `json:"AgentPrompt"`
+	AgentDenyEdits bool   `json:"AgentDenyEdits"`
+
 	// WorkspaceID != "" переключает ход на workspace: cwd —
 	// <base>/workspaces/<WorkspaceID>, roots — подкаталоги проектов.
 	WorkspaceID       string             `json:"WorkspaceId"`
@@ -309,18 +316,22 @@ func (a *Activities) VipolnitHodOpenCodeActivity(ctx context.Context, cmd HodCom
 
 	started := time.Now()
 	answer, execErr := a.OpenCode.Execute(runCtx, OpenCodeRequest{
-		SessionID: cmd.SessionID,
-		URL:       cmd.URL,
-		Model:     cmd.Model,
-		APIKey:    cmd.ApiKey,
-		WorkDir:   workDir,
-		Roots:     roots,
-		Messages:  sobratSoobsheniya(cmd),
-		Workspace: strings.TrimSpace(cmd.WorkspaceID) != "",
-		ReadOnly:  effectiveReadOnly,
+		SessionID:      cmd.SessionID,
+		URL:            cmd.URL,
+		Model:          cmd.Model,
+		APIKey:         cmd.ApiKey,
+		AgentName:      cmd.AgentName,
+		AgentPrompt:    cmd.AgentPrompt,
+		AgentDenyEdits: cmd.AgentDenyEdits,
+		WorkDir:        workDir,
+		Roots:          roots,
+		Messages:       sobratSoobsheniya(cmd),
+		Workspace:      strings.TrimSpace(cmd.WorkspaceID) != "",
+		ReadOnly:       effectiveReadOnly,
 		// Правки файлов запрещены только у read-only хода по юниту
 		// (15.7-а): у read-only workspace правки в рабочей копии
-		// разрешены, запрещена запись в git.
+		// разрешены, запрещена запись в git. Plan-подобный мод запрещает
+		// правки в обоих типах чата.
 		DenyEdits:   isUnitSession && effectiveReadOnly,
 		ArtifactDir: artifactDir,
 	})

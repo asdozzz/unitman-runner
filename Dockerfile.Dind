@@ -26,10 +26,12 @@ COPY --from=opencode /usr/local/bin/opencode /usr/local/bin/opencode
 COPY temporal/activity/unit/docker-dind/entrypoint.sh /usr/local/bin/unit-entrypoint.sh
 COPY temporal/activity/unit/docker-dind/unit-repo-sync.sh /usr/local/bin/unit-repo-sync
 COPY temporal/activity/unit/docker-dind/unit-volumes-sync.sh /usr/local/bin/unit-volumes-sync
+COPY temporal/activity/unit/docker-dind/unit-skills-sync.sh /usr/local/bin/unit-skills-sync
 
 RUN chmod +x \
     /usr/local/bin/unit-entrypoint.sh \
     /usr/local/bin/unit-repo-sync \
-    /usr/local/bin/unit-volumes-sync
+    /usr/local/bin/unit-volumes-sync \
+    /usr/local/bin/unit-skills-sync
 
 ENTRYPOINT ["/usr/local/bin/unit-entrypoint.sh"]

@@ -42,6 +42,10 @@ dockerd \
 mkdir -p /workspace
 mkdir -p /root/.local/share/opencode
 
+# 2а. Материализуем OpenCode-навыки из read-only staging-а в конфиг OpenCode.
+# Best-effort: ошибки не должны мешать старту workspace.
+unit-skills-sync || true
+
 # 3. Сообщаем healthcheck, что workspace готов.
 touch /tmp/.workspace_ready
 

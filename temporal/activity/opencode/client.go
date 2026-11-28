@@ -33,6 +33,12 @@ type OpenCodeRequest struct {
 	WorkDir   string
 	Roots     []string
 	Messages  []Replika
+	// AgentName/AgentPrompt задают выбранный мод агента. Пустое имя
+	// означает legacy-ход без `--agent`.
+	AgentName   string
+	AgentPrompt string
+	// AgentDenyEdits запрещает правку файлов для plan-подобного мода.
+	AgentDenyEdits bool
 	// Workspace переключает CLI executor на каталог /workspace.
 	Workspace bool
 	// ReadOnly запрещает ход писать в git (permission bash git

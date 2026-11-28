@@ -5,9 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
+	"time"
 
 	"runner/temporal/activity/unit"
+	"runner/temporal/activity/unit/model"
+
+	"go.temporal.io/sdk/activity"
 )
 
 const (
@@ -21,6 +26,14 @@ const (
 	// workspaceComposeService — имя compose-сервиса workspace-стенда
 	// (раскладка temporal/activity/workspace: workspaceComposeService).
 	workspaceComposeService = "workspace"
+
+	// containerHome — HOME контейнера: unit-skills-sync кладёт сюда
+	// .config/opencode/skills-index.md. И unit, и workspace работают от root.
+	containerHome = "/root"
+	// skillsIndexPath — гарантированный instructions-файл для OpenCode.
+	skillsIndexPath = containerHome + "/.config/opencode/skills-index.md"
+	// skillSyncCommand — best-effort материализация навыков перед ходом.
+	skillSyncCommand = "unit-skills-sync --if-changed"
 )
 
 // CLIExecutor выполняет ход через установленный в контейнере юнита OpenCode
@@ -30,6 +43,9 @@ type CLIExecutor struct {
 	// ExecUnit запускает команду в контейнере юнита. nil означает реальный
 	// docker compose exec; поле нужно для тестов.
 	ExecUnit func(ctx context.Context, unitPath, command string, opts unit.UnitExecOptions) (string, error)
+	// OnSkillSync — необязательный колбэк для тестов/диагностики: получает
+	// ошибку pre-turn синхронизации навыков (nil при успехе).
+	OnSkillSync func(err error)
 }
 
 func NewCLIExecutor() *CLIExecutor {
@@ -70,6 +86,72 @@ func (e *CLIExecutor) executeFresh(ctx context.Context, req OpenCodeRequest) (Op
 	return answer, err
 }
 
+// syncSkills выполняет best-effort синхронизацию навыков перед ходом.
+// Синтез не наследует переменные OpenCode-конфига: скрипту они не нужны.
+func (e *CLIExecutor) syncSkills(
+	ctx context.Context,
+	req OpenCodeRequest,
+	execUnit func(ctx context.Context, unitPath, command string, opts unit.UnitExecOptions) (string, error),
+	opts unit.UnitExecOptions,
+) {
+	syncOpts := opts
+	syncOpts.Env = nil
+
+	output, err := execUnit(ctx, req.WorkDir, skillSyncCommand, syncOpts)
+	if ctx.Err() != nil {
+		// Отменённый ход не должен оставлять лишний прогресс-шаг.
+		return
+	}
+	if err != nil {
+		log.Printf("opencode: pre-turn skills sync failed (non-fatal): %s", redact(err.Error(), req.APIKey))
+		e.recordSkillSyncStep(ctx, output, err)
+	}
+}
+
+// recordSkillSyncStep фиксирует результат синхронизации как информационный
+// шаг прогресса, если доступен workflow id. Вне Temporal (тесты) — no-op.
+func (e *CLIExecutor) recordSkillSyncStep(ctx context.Context, output string, syncErr error) {
+	if e.OnSkillSync != nil {
+		e.OnSkillSync(syncErr)
+	}
+
+	workflowID := activityWorkflowID(ctx)
+	if workflowID == "" {
+		return
+	}
+
+	now := time.Now().Unix()
+	step := model.Step{
+		Command:       skillSyncCommand,
+		Success:       true,
+		Unixtime:      now,
+		UnixtimeStart: now,
+	}
+	if syncErr != nil {
+		step.Response = "non-fatal: " + syncErr.Error()
+	} else {
+		step.Response = strings.TrimSpace(output)
+	}
+
+	steps := []model.Step{step}
+	unit.SaveStepsToMono(unit.SaveStepsCommand{
+		ResponseId: workflowID,
+		Steps:      &steps,
+		Finished:   false,
+	})
+}
+
+// activityWorkflowID безопасно достаёт id workflow из Temporal-контекста.
+func activityWorkflowID(ctx context.Context) (id string) {
+	defer func() {
+		if recover() != nil {
+			id = ""
+		}
+	}()
+
+	return activity.GetInfo(ctx).WorkflowExecution.ID
+}
+
 func (e *CLIExecutor) execute(ctx context.Context, req OpenCodeRequest, continueSession bool) (OpenCodeAnswer, string, error) {
 	config, err := cliConfigJSON(req)
 	if err != nil {
@@ -93,6 +175,10 @@ func (e *CLIExecutor) execute(ctx context.Context, req OpenCodeRequest, continue
 	if execUnit == nil {
 		execUnit = unit.ExecInUnitContainerContext
 	}
+
+	// Перед ходом материализуем обновлённые навыки. Ошибка не валит ход:
+	// OpenCode всё равно прочитает skills-index.md из instructions.
+	e.syncSkills(ctx, req, execUnit, opts)
 
 	output, execErr := execUnit(ctx, req.WorkDir, command, opts)
 	if ctx.Err() != nil {
@@ -139,6 +225,9 @@ func cliCommand(req OpenCodeRequest, continueSession bool) string {
 		"--auto",
 		"--model", cliProviderID + "/" + cliModelAlias,
 	}
+	if agent := strings.TrimSpace(req.AgentName); agent != "" {
+		args = append(args, "--agent", agent)
+	}
 	if continueSession && strings.TrimSpace(req.SessionID) != "" {
 		args = append(args, "--session", req.SessionID)
 	}
@@ -160,6 +249,26 @@ func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
+// validAgentName проверяет имя агента, которое попадает в ключ JSON-конфига
+// и в argv `opencode run --agent`. Совпадает с валидацией бэкенда.
+func validAgentName(name string) bool {
+	if len(name) == 0 || len(name) > 72 {
+		return false
+	}
+
+	for i, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= '0' && r <= '9':
+		case r == '-' && i > 0:
+		default:
+			return false
+		}
+	}
+
+	return true
+}
+
 // cliPrompt собирает сообщение для CLI. При продолжении сессии OpenCode уже
 // хранит историю, поэтому отправляем только текущую реплику.
 func cliPrompt(req OpenCodeRequest, continueSession bool) string {
@@ -170,9 +279,10 @@ func cliPrompt(req OpenCodeRequest, continueSession bool) string {
 		prompt += "\n\n" + cliArtifactInstruction(req.ArtifactDir)
 	}
 	switch {
-	case req.DenyEdits:
-		// Read-only ход по юниту: правки файлов запрещены и на уровне
-		// permission-конфига, инструкция дублирует запрет словами.
+	case req.DenyEdits || req.AgentDenyEdits:
+		// Read-only ход по юниту или plan-подобный мод: правки файлов
+		// запрещены и на уровне permission-конфига, инструкция дублирует
+		// запрет словами.
 		prompt += "\n\n" + cliReadOnlyInstruction
 	case req.ReadOnly:
 		// Read-only workspace: правки в рабочей копии разрешены,
@@ -247,8 +357,23 @@ func cliArtifactInstruction(dir string) string {
 }
 
 type cliConfig struct {
-	Provider   map[string]cliProvider `json:"provider"`
-	Permission *cliPermission         `json:"permission,omitempty"`
+	Provider map[string]cliProvider `json:"provider"`
+	// Agent — выбранный мод агента. Ключ карты — имя агента, оно же
+	// передаётся в `opencode run --agent`.
+	Agent map[string]cliAgent `json:"agent,omitempty"`
+	// Instructions — файл-индекс навыков. unit-skills-sync создаёт его даже
+	// при отсутствии навыков, поэтому ссылка безопасна и служит fallback,
+	// если OpenCode не обнаруживает каталог skill/ автоматически.
+	Instructions []string       `json:"instructions,omitempty"`
+	Permission   *cliPermission `json:"permission,omitempty"`
+}
+
+// cliAgent описывает inline-агента OpenCode. Промпт полностью заменяет
+// системный промпт агента; tools остаются дефолтными.
+type cliAgent struct {
+	Mode       string         `json:"mode"`
+	Prompt     string         `json:"prompt,omitempty"`
+	Permission *cliPermission `json:"permission,omitempty"`
 }
 
 // cliPermission — жёсткое ограничение прав read-only хода на уровне
@@ -305,18 +430,40 @@ func cliConfigJSON(req OpenCodeRequest) (string, error) {
 				},
 			},
 		},
+		Instructions: []string{skillsIndexPath},
+	}
+
+	// plan-подобный мод запрещает правку файлов в обоих типах чата.
+	denyEdits := req.DenyEdits || req.AgentDenyEdits
+
+	if agent := strings.TrimSpace(req.AgentName); agent != "" {
+		if !validAgentName(agent) {
+			return "", fmt.Errorf("opencode: invalid agent name")
+		}
+		agentConfig := cliAgent{
+			Mode:   "primary",
+			Prompt: req.AgentPrompt,
+		}
+		if req.AgentDenyEdits {
+			agentConfig.Permission = &cliPermission{
+				Edit: "deny",
+				Bash: cliGitWriteDeny,
+			}
+		}
+		config.Agent = map[string]cliAgent{agent: agentConfig}
 	}
 
 	// Read-only ход ограничивается на уровне opencode, а не только
 	// инструкцией в промпте (plan §3.4): запись в git запрещена у любого
-	// read-only хода, правка файлов — дополнительно у read-only хода по юниту.
-	if req.ReadOnly || req.DenyEdits {
+	// read-only хода, правка файлов — дополнительно у read-only хода по
+	// юниту или plan-подобного мода.
+	if req.ReadOnly || denyEdits {
 		config.Permission = &cliPermission{
 			Bash: cliGitWriteDeny,
 		}
 	}
 
-	if req.DenyEdits {
+	if denyEdits {
 		config.Permission.Edit = "deny"
 	}
 

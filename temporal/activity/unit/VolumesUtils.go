@@ -23,6 +23,8 @@ const (
 	unitStagingDirName = "seed"
 	// Staging-каталог вложений: <unit>/seed/volumes.
 	unitStagingVolumesDirName = "volumes"
+	// Staging-каталог OpenCode-навыков: <unit>/seed/skills.
+	unitStagingSkillsDirName = "skills"
 
 	unitVolumesScriptPath = "/usr/local/bin/unit-volumes-sync"
 	unitVolumeMarkersDir  = "/app/.unitman/volumes"

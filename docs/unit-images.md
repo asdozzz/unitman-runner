@@ -59,6 +59,48 @@ go build -ldflags "\
   -X runner/config.UnitImageTag=dev" -o main .
 ```
 
+## OpenCode-навыки (skills)
+
+Перед `docker compose up` раннер запрашивает эффективные навыки проекта у
+backend-а (`POST /api/internal/opencode/skills/resolve`, подпись
+`X-Runner-Signature`) и раскладывает их в staging-каталог юнита:
+
+```
+<unit>/seed/skills/
+  manifest.json                 # manifestHash, список навыков, error-маркер
+  skills-index.md               # детерминированный индекс для агента
+  <containerName>/SKILL.md      # YAML frontmatter + тело навыка
+```
+
+Каталог создаётся `EnsureUnitSeedDir` ещё до `compose up` (иначе Docker создаст
+его root-owned) и монтируется read-only:
+
+```yaml
+- ./seed/skills:/opt/unitman/skills:ro
+```
+
+Внутри контейнера `unit-skills-sync` (entrypoint и каждый ход агента) копирует
+навыки в конфиг OpenCode:
+
+```
+$HOME/.config/opencode/skill/<containerName>/SKILL.md
+$HOME/.config/opencode/skills-index.md
+$HOME/.config/opencode/.unitman-skills-hash
+/app/.unitman/skills-manifest.json      # только диагностика
+```
+
+`OPENCODE_CONFIG_CONTENT` дополнительно содержит
+`"instructions": ["/root/.config/opencode/skills-index.md"]` — fallback, если
+OpenCode не обнаруживает `skill/` автоматически.
+
+`unit-skills-sync --if-changed` сравнивает `manifestHash` с сохранённым hash и
+при совпадении ничего не делает. Скрипт best-effort: при отсутствии источника
+или ошибке он логирует проблему в stderr и всегда завершается с кодом 0.
+
+Деградация: 404 от resolve означает «фича не развёрнута»; ошибка сети или
+записи не валит подготовку юнита — юнит просто останется без навыков, а в шаг
+прогресса попадёт сообщение `non-fatal: ...`.
+
 ## Подготовка и запуск IDE
 
 1. Подготовка юнита выполняет `docker compose up -d` и поднимает только

@@ -104,6 +104,13 @@ func ZapustitWorkspaceActivity(
 		return result, nil
 	}
 
+	// Навыки готовятся для всех проектов workspace до compose up: entrypoint
+	// контейнера материализует их из смонтированного seed/skills. Ошибка
+	// некритична и не мешает запуску workspace.
+	started = time.Now()
+	skillsOutcome, skillsErr := stageWorkspaceSkills(ctx, workspaceDir, command.Projects)
+	tracker.add("stage opencode skills", workspaceSkillsStepMessage(skillsOutcome, skillsErr), nil, started)
+
 	tracker.publish(false)
 
 	started = time.Now()

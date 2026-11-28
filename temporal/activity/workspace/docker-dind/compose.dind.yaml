@@ -26,6 +26,9 @@ services:
       - workspace_app:/workspace
       - workspace_docker:/var/lib/docker
       - workspace_opencode:/root/.local/share/opencode
+      # Staging OpenCode-навыков: entrypoint и ходы агента материализуют их
+      # в $HOME/.config/opencode через unit-skills-sync.
+      - ./seed/skills:/opt/unitman/skills:ro
 
   # IDE работает в network namespace workspace и видит app-том read-only.
   ide:

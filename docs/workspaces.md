@@ -14,6 +14,11 @@ workspace работает не с одним проектом, а с набор
   .env
   entrypoint.sh
   workspace-repo-sync.sh
+  unit-skills-sync.sh
+  seed/skills/               # staging OpenCode-навыков (host, read-only mount)
+    manifest.json
+    skills-index.md
+    <containerName>/SKILL.md
   workspace.code-workspace   # генерируется внутри тома app
   ide/
     Dockerfile
@@ -84,6 +89,38 @@ UNITMAN_WORKSPACE_OPENCODE_VOLUME
 
 `workspace.code-workspace` содержит папки всех проектов и генерируется после
 успешной синхронизации.
+
+## OpenCode-навыки (skills)
+
+Навыки резолвятся для всех `Projects[].ProjectId` после
+`prepareWorkspaceFiles` и до `compose up --build`, затем раскладываются в
+`<workspace>/seed/skills` (тот же макет, что у юнита: `manifest.json`,
+`skills-index.md`, `<containerName>/SKILL.md`). Каталог монтируется в
+контейнер read-only:
+
+```yaml
+- ./seed/skills:/opt/unitman/skills:ro
+```
+
+`unit-skills-sync.sh` попадает в образ workspace через `Dockerfile.temp` и
+вызывается из `entrypoint.sh`, а также перед каждым ходом агента
+(`unit-skills-sync --if-changed`). Материализация:
+
+```
+$HOME/.config/opencode/skill/<containerName>/SKILL.md
+$HOME/.config/opencode/skills-index.md
+$HOME/.config/opencode/.unitman-skills-hash
+/app/.unitman/skills-manifest.json      # только диагностика
+```
+
+`OPENCODE_CONFIG_CONTENT` workspace-хода также содержит
+`"instructions": ["/root/.config/opencode/skills-index.md"]`.
+
+При `ObnovitWorkspaceActivity` (добавление/удаление проектов) набор навыков
+перечитывается и раскладывается заново, после чего выполняется
+`unit-skills-sync --if-changed` в работающем контейнере. Если контейнер
+остановлен или bind-mount ещё не подхватил новую раскладку, обновление
+материализуется на следующем ходе агента. Ошибки навыков всегда некритичны.
 
 ## Активности
 

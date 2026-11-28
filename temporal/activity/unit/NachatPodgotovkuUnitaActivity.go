@@ -202,6 +202,14 @@ func NachatPodgotovkuUnitaActivity(ctx context.Context, command NachatPodgotovku
 		return wrapResultatPogotovki(result), nil
 	}
 
+	// Навыки OpenCode готовятся до compose up: каталог seed/skills уже
+	// смонтирован в контейнер read-only. Ошибка сети/записи не фатальна —
+	// старый backend или недоступный resolve-эндпоинт просто оставят юнит
+	// без навыков.
+	unixtimeStart = time.Now().Unix()
+	skillsOutcome, skillsErr := StageUnitSkills(ctx, unitPath, command.ProjectId)
+	result.Steps = model.AddStepToSteps(result.Steps, "stage opencode skills", SkillsStepMessage(skillsOutcome, skillsErr), nil, unixtimeStart)
+
 	// IDE вынесена в compose-профиль и стартует по требованию при открытии
 	// редактора, поэтому подготовка поднимает только контейнер unit.
 	args := []string{"docker", "compose", "up", "-d"}

@@ -79,8 +79,19 @@ func WriteUnitEnvFile(unitPath string, entries [][2]string) error {
 
 // EnsureUnitSeedDir создаёт staging-каталоги до compose up, чтобы Docker
 // не создал их с правами root и не сломал запись из runner.
+//
+// seed/skills создаётся заранее, потому что оно монтируется в контейнер
+// read-only (./seed/skills:/opt/unitman/skills:ro): если каталога нет,
+// Docker создаст его от root и staging навыков из runner станет невозможен.
 func EnsureUnitSeedDir(unitPath string) error {
-	return os.MkdirAll(filepath.Join(unitPath, unitStagingDirName, unitStagingVolumesDirName), os.ModePerm)
+	seedPath := filepath.Join(unitPath, unitStagingDirName)
+	for _, name := range []string{unitStagingVolumesDirName, unitStagingSkillsDirName} {
+		if err := os.MkdirAll(filepath.Join(seedPath, name), os.ModePerm); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // RemoveLegacyHostApp удаляет старый host-каталог app после успешного seed.
